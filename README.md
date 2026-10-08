@@ -7,9 +7,30 @@
 (`GET /health`), PostgreSQL, Prisma-модели и миграция (`User`, `Exchange`, `ExchangeStatusHistory`,
 `NotificationOutbox`), матрица переходов статусов обмена, интерфейс `ExchangeProvider` и
 `MockExchangeProvider`, `ExchangeService` с Prisma-репозиторием (compare-and-set переходы с историей,
-идемпотентное создание, сверка статуса с провайдером), Zod-конфигурация, Pino, Vitest.
-Telegram-бота, worker, outbox-sender, реального клиента ChangeNOW и кошельков пока нет;
-сервис пока не подключён к `src/index.ts`.
+идемпотентное создание, сверка статуса с провайдером), polling worker статусов (захват созревших
+обменов с lease через `FOR UPDATE SKIP LOCKED`, `ExchangeService.pollDueExchanges`,
+`ExchangeStatusWorker`), outbox уведомлений (запись в outbox атомарно со сменой статуса по данным
+провайдера, `NotificationService` с retry/backoff, rate limiting и обработкой блокировки бота,
+порт `NotificationSender`, `NotificationOutboxWorker`), Zod-конфигурация, Pino, Vitest.
+
+**Telegram-бот (тестовый режим).** grammY, long polling, провайдер — только `MockExchangeProvider`
+(реальных обменов нет). Меню, мастер «новый обмен» (валюты → тип курса → сумма → адрес → memo →
+подтверждение), карточки обменов, отмена, кнопка «⏩ Демо: следующий статус» для прохождения всего
+жизненного цикла, уведомления через outbox. Адаптер `NotificationSender` на grammY переводит ошибки
+Telegram (403 / 429 / 400) в `NotificationSendError`. Сервисы и worker'ы подключены в `src/compose.ts`.
+Реального клиента ChangeNOW и кошельков пока нет; обработка истечения черновиков/котировок и
+восстановление `CREATING` worker'ом не реализованы.
+
+### Запуск бота
+
+1. Получите токен у [@BotFather](https://t.me/BotFather) и добавьте в `.env`
+   (файл в git не попадает): `TELEGRAM_BOT_TOKEN=<id>:<секрет>`.
+2. `npm run db:up && npx prisma migrate deploy && npm run dev`.
+3. Откройте бота в Telegram и отправьте `/start`.
+
+Без `TELEGRAM_BOT_TOKEN` запускается только HTTP-сервер. Состояние mock-провайдера живёт в памяти:
+после перезапуска старые тестовые обмены остаются в БД, но провайдер их уже «не помнит»
+(опрос статуса будет откладываться с backoff).
 
 ## Требования
 
@@ -25,7 +46,7 @@ cp .env.example .env          # затем замените CHANGE_ME на св�
 npm run db:up                 # PostgreSQL в Docker (ждёт healthcheck)
 npm run prisma:validate
 npm run prisma:generate
-npm run dev                   # http://127.0.0.1:3000/health
+npm run dev                   # http://127.0.0.1:3000/health (бот — при заданном TELEGRAM_BOT_TOKEN)
 ```
 
 Проверка:
@@ -81,8 +102,11 @@ src/
   database/        # Prisma client (generated/ — артефакт генерации), repositories/
   domain/          # чистая доменная логика: статусы обмена и переходы, порт ExchangeProvider,
                    # арифметика десятичных сумм (строки, без Float)
-  integrations/    # адаптеры внешних провайдеров (пока только MockExchangeProvider в памяти)
+  bot/             # Telegram-интерфейс (grammY): меню, диалог обмена, карточки; без бизнес-логики
+  integrations/    # адаптеры: MockExchangeProvider (в памяти), grammY-адаптер NotificationSender
+  compose.ts       # composition root: сервисы, worker'ы и бот
   http/            # Express-приложение, /health, graceful shutdown
+  workers/         # фоновые циклы (ExchangeStatusWorker): только расписание, логика в application
   observability/   # Pino-логгер с маскированием чувствительных полей
   index.ts         # точка входа
 tests/             # Vitest (domain/, db/ — интеграционные тесты схемы)

@@ -2,6 +2,18 @@ import { z } from 'zod';
 
 const logLevels = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
 
+/**
+ * Формат токена BotFather: `<числовой id бота>:<секрет>`. Сообщение об ошибке
+ * не содержит значения, чтобы токен не попал в логи.
+ */
+const telegramTokenSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\d{5,}:[A-Za-z0-9_-]{30,}$/,
+    'must look like "<bot id>:<secret>" (token from @BotFather)',
+  );
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1).default('127.0.0.1'),
@@ -9,6 +21,11 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(logLevels).default('info'),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(10_000),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  // Пустое значение (`TELEGRAM_BOT_TOKEN=`) равносильно отсутствию: бот не запускается.
+  TELEGRAM_BOT_TOKEN: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    telegramTokenSchema.optional(),
+  ),
 });
 
 export interface AppConfig {
@@ -18,6 +35,8 @@ export interface AppConfig {
   readonly logLevel: (typeof logLevels)[number];
   readonly shutdownTimeoutMs: number;
   readonly databaseUrl: string;
+  /** Токен Telegram-бота. Не задан — бот и связанные с ним worker'ы не запускаются. */
+  readonly telegramBotToken: string | undefined;
 }
 
 /**
@@ -48,5 +67,6 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     logLevel: env.LOG_LEVEL,
     shutdownTimeoutMs: env.SHUTDOWN_TIMEOUT_MS,
     databaseUrl: env.DATABASE_URL,
+    telegramBotToken: env.TELEGRAM_BOT_TOKEN,
   });
 }

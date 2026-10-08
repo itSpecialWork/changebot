@@ -1,4 +1,5 @@
 import { config as loadDotenv } from 'dotenv';
+import { createApplication } from './compose.js';
 import { ConfigError, parseConfig, type AppConfig } from './config/env.js';
 import { createPrismaClient, pingDatabase } from './database/prisma.js';
 import { createApp } from './http/app.js';
@@ -34,11 +35,21 @@ function main(): void {
     process.exit(1);
   });
 
+  const application = createApplication({
+    config,
+    prisma,
+    logger,
+    onFatalError: () => void shutdown('botFatalError'),
+  });
+
   const shutdown = createShutdown({
     server,
     logger,
     timeoutMs: config.shutdownTimeoutMs,
-    cleanup: () => prisma.$disconnect(),
+    cleanup: async () => {
+      await application.stop();
+      await prisma.$disconnect();
+    },
   });
 
   process.on('SIGINT', () => void shutdown('SIGINT'));
@@ -51,6 +62,8 @@ function main(): void {
     logger.fatal({ err: error }, 'Uncaught exception');
     void shutdown('uncaughtException');
   });
+
+  application.start();
 }
 
 main();

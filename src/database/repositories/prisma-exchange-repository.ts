@@ -4,6 +4,7 @@ import {
 } from '../../application/exchanges/errors.js';
 import type {
   CheckFailureParams,
+  ClaimDueParams,
   CheckSuccessParams,
   ExchangePatch,
   ExchangeRepository,
@@ -106,6 +107,17 @@ export class PrismaExchangeRepository implements ExchangeRepository {
     return row && toRecord(row);
   }
 
+  async listByUser(userId: string, limit: number): Promise<ExchangeRecord[]> {
+    if (limit <= 0) return [];
+    const rows = await this.prisma.exchange.findMany({
+      where: { userId },
+      // id (UUIDv7) разрешает совпадения createdAt детерминированно.
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
+    return rows.map(toRecord);
+  }
+
   async transition(params: TransitionParams): Promise<ExchangeRecord> {
     return this.prisma.$transaction(async (tx) => {
       const result = await tx.exchange.updateMany({
@@ -130,7 +142,7 @@ export class PrismaExchangeRepository implements ExchangeRepository {
         orderBy: { sequence: 'desc' },
         select: { sequence: true },
       });
-      await tx.exchangeStatusHistory.create({
+      const historyEntry = await tx.exchangeStatusHistory.create({
         data: {
           exchangeId: params.exchangeId,
           sequence: (last?.sequence ?? 0) + 1,
@@ -139,7 +151,20 @@ export class PrismaExchangeRepository implements ExchangeRepository {
           providerStatus: updated.providerStatus,
           reason: params.reason,
         },
+        select: { id: true },
       });
+      if (params.notification) {
+        await tx.notificationOutbox.create({
+          data: {
+            userId: updated.userId,
+            exchangeId: updated.id,
+            type: params.notification.type,
+            payload: params.notification.payload,
+            dedupeKey: `exchange:${updated.id}:history:${historyEntry.id}`,
+            nextAttemptAt: params.at,
+          },
+        });
+      }
       return toRecord(updated);
     });
   }
@@ -159,6 +184,27 @@ export class PrismaExchangeRepository implements ExchangeRepository {
       nextCheckAt: params.nextCheckAt,
       providerStatus: params.providerStatus,
     });
+  }
+
+  async claimDueForProviderCheck(params: ClaimDueParams): Promise<string[]> {
+    if (params.statuses.length === 0 || params.limit <= 0) return [];
+    // Все значения передаются параметрами. SKIP LOCKED: параллельные worker не ждут друг друга
+    // и не получают одну и ту же строку.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      UPDATE exchanges
+      SET next_check_at = ${params.leaseUntil}::timestamptz,
+          updated_at = ${params.now}::timestamptz
+      WHERE id IN (
+        SELECT id FROM exchanges
+        WHERE status = ANY(${[...params.statuses]}::text[]::exchange_status[])
+          AND provider_exchange_id IS NOT NULL
+          AND next_check_at <= ${params.now}::timestamptz
+        ORDER BY next_check_at ASC
+        LIMIT ${params.limit}::int
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id::text AS id`;
+    return rows.map((row) => row.id);
   }
 
   /** Обновление без смены статуса: тоже compare-and-set, истории не пишет. */

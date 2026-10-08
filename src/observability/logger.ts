@@ -14,12 +14,16 @@ export const redactPaths = [
   '*.secret',
   '*.databaseUrl',
   '*.DATABASE_URL',
+  '*.telegramBotToken',
+  '*.TELEGRAM_BOT_TOKEN',
   'password',
   'token',
   'apiKey',
   'secret',
   'databaseUrl',
   'DATABASE_URL',
+  'telegramBotToken',
+  'TELEGRAM_BOT_TOKEN',
 ];
 
 export function createLogger(config: Pick<AppConfig, 'nodeEnv' | 'logLevel'>): Logger {

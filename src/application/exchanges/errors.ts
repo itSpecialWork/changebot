@@ -46,6 +46,17 @@ export class InvalidExchangeInputError extends Error {
   }
 }
 
+/** Обмен нельзя отменить: он уже создан у провайдера или завершён. */
+export class ExchangeNotCancellableError extends Error {
+  constructor(
+    public readonly exchangeId: string,
+    public readonly status: ExchangeStatus,
+  ) {
+    super(`Exchange in status ${status} cannot be cancelled by user`);
+    this.name = 'ExchangeNotCancellableError';
+  }
+}
+
 /** Статус обмена нельзя сверять с провайдером (нет обмена у провайдера или он завершён). */
 export class ExchangeNotSyncableError extends Error {
   constructor(

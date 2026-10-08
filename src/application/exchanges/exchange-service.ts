@@ -13,8 +13,11 @@
 import type { ExchangeProviderKind, ExchangeRecord } from '../../domain/exchanges/exchange.js';
 import {
   ExchangeProviderError,
+  type CurrencyPair,
   type ExchangeProvider,
+  type ProviderCurrency,
   type ProviderExchangeStatus,
+  type ProviderQuote,
   type RateType,
 } from '../../domain/exchanges/exchange-provider.js';
 import {
@@ -29,8 +32,11 @@ import {
   parseDecimal,
 } from '../../domain/shared/decimal-string.js';
 import type { Logger } from '../../observability/logger.js';
+import { buildExchangeStatusNotification } from '../notifications/exchange-status-notification.js';
+import type { NotificationDraft } from '../notifications/notification-repository.js';
 import { computeBackoffDelayMs } from './backoff.js';
 import {
+  ExchangeNotCancellableError,
   ExchangeNotFoundError,
   ExchangeNotSyncableError,
   ExchangeStatusConflictError,
@@ -93,6 +99,11 @@ export interface CreateDraftInput {
   readonly refundExtraId?: string | null;
 }
 
+export interface PreviewQuoteInput extends CurrencyPair {
+  readonly fromAmount: string;
+  readonly rateType: RateType;
+}
+
 export type SyncOutcome = 'transitioned' | 'unchanged' | 'deferred';
 
 export interface SyncResult {
@@ -100,6 +111,16 @@ export interface SyncResult {
   /** Для deferred: машинный код причины. */
   readonly reason?: string;
   readonly exchange: ExchangeRecord;
+}
+
+export interface PollSummary {
+  /** Сколько обменов захвачено в этот проход. */
+  readonly claimed: number;
+  readonly transitioned: number;
+  readonly unchanged: number;
+  readonly deferred: number;
+  /** Непредвиденные ошибки по отдельным обменам (обмен будет проверен после истечения lease). */
+  readonly errors: number;
 }
 
 /** Статусы, в которых у обмена есть провайдерская часть и его нужно опрашивать. */
@@ -111,9 +132,17 @@ const PROVIDER_TRACKED_STATUSES: readonly ExchangeStatus[] = [
   'VERIFYING',
 ];
 
+/** Статусы, в которых пользователь может отказаться: у провайдера обмена ещё нет. */
+const CANCELLABLE_STATUSES: readonly ExchangeStatus[] = [
+  'DRAFT',
+  'QUOTED',
+  'AWAITING_CONFIRMATION',
+];
+
 interface MoveOptions {
   readonly nextCheckAt: Date | null;
   readonly patch?: ExchangePatch;
+  readonly notification?: NotificationDraft;
 }
 
 function requireNonEmpty(value: string, field: string): void {
@@ -200,6 +229,67 @@ export class ExchangeService {
       }
     }
     return exchange;
+  }
+
+  /** Список валют провайдера (для выбора пары в интерфейсе). */
+  async listCurrencies(): Promise<readonly ProviderCurrency[]> {
+    return this.provider.getCurrencies(this.callOptions());
+  }
+
+  /**
+   * Предварительная котировка без создания обмена: быстрая проверка пары и суммы
+   * до того, как пользователь начнёт вводить адрес. Ничего не сохраняет.
+   */
+  async previewQuote(input: PreviewQuoteInput): Promise<ProviderQuote> {
+    return this.provider.getQuote(
+      {
+        fromCurrency: input.fromCurrency,
+        fromNetwork: input.fromNetwork,
+        toCurrency: input.toCurrency,
+        toNetwork: input.toNetwork,
+        fromAmount: normalizeAmount(input.fromAmount),
+        rateType: input.rateType,
+      },
+      this.callOptions(),
+    );
+  }
+
+  /** Обмен пользователя. Чужой обмен неотличим от несуществующего. */
+  async getForUser(userId: string, exchangeId: string): Promise<ExchangeRecord> {
+    return this.loadOwned(userId, exchangeId);
+  }
+
+  /** Последние обмены пользователя, новые первыми. */
+  async listForUser(userId: string, limit: number): Promise<ExchangeRecord[]> {
+    return this.repository.listByUser(userId, limit);
+  }
+
+  /**
+   * Доводит черновик до AWAITING_CONFIRMATION (DRAFT → QUOTED → AWAITING_CONFIRMATION).
+   * Безопасно повторять: уже выполненные шаги пропускаются.
+   */
+  async prepareConfirmation(userId: string, exchangeId: string): Promise<ExchangeRecord> {
+    let exchange = await this.loadOwned(userId, exchangeId);
+    if (exchange.status === 'DRAFT') {
+      exchange = await this.requestQuote(userId, exchangeId);
+    }
+    if (exchange.status === 'QUOTED') {
+      exchange = await this.requestConfirmation(userId, exchangeId);
+    }
+    this.requireStatus(exchange, 'AWAITING_CONFIRMATION');
+    return exchange;
+  }
+
+  /**
+   * Отмена пользователем до создания обмена у провайдера. Закрывает обмен статусом
+   * EXPIRED с причиной user_cancelled (отдельного статуса «отменён» в модели нет).
+   */
+  async cancelByUser(userId: string, exchangeId: string): Promise<ExchangeRecord> {
+    const exchange = await this.loadOwned(userId, exchangeId);
+    if (!CANCELLABLE_STATUSES.includes(exchange.status)) {
+      throw new ExchangeNotCancellableError(exchange.id, exchange.status);
+    }
+    return this.move(exchange, 'EXPIRED', 'user_cancelled', { nextCheckAt: null });
   }
 
   /** DRAFT → QUOTED: запрашивает котировку у провайдера. */
@@ -380,10 +470,14 @@ export class ExchangeService {
       throw error;
     }
 
+    // Уведомляем только о переходах, замеченных при сверке с провайдером: на
+    // действия пользователя в диалоге (подтверждение, истечение котировки) бот отвечает сам.
+    const notification = buildExchangeStatusNotification(exchange, remote.status);
     const updated = await this.move(exchange, remote.status, 'provider_status_changed', {
       nextCheckAt: isTerminalStatus(remote.status)
         ? null
         : new Date(now.getTime() + this.config.pollIntervalMs),
+      ...(notification ? { notification } : {}),
       patch: {
         providerStatus: remote.providerStatus,
         lastCheckedAt: now,
@@ -392,6 +486,45 @@ export class ExchangeService {
       },
     });
     return { outcome: 'transitioned', exchange: updated };
+  }
+
+  /**
+   * Один проход фонового опроса: захватывает до `limit` созревших обменов и
+   * сверяет каждый с провайдером. Обмены обрабатываются параллельно, ошибка одного
+   * не влияет на остальные.
+   *
+   * Lease (nextCheckAt) покрывает вызов провайдера с запасом. Если проверка
+   * не завершилась, обмен вернётся в работу после истечения lease.
+   */
+  async pollDueExchanges(limit: number): Promise<PollSummary> {
+    const now = this.now();
+    const ids = await this.repository.claimDueForProviderCheck({
+      now,
+      limit,
+      statuses: PROVIDER_TRACKED_STATUSES,
+      leaseUntil: new Date(now.getTime() + this.config.providerTimeoutMs * 2),
+    });
+
+    const results = await Promise.allSettled(ids.map((id) => this.syncWithProvider(id)));
+
+    let transitioned = 0;
+    let unchanged = 0;
+    let deferred = 0;
+    let errors = 0;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        if (result.value.outcome === 'transitioned') transitioned += 1;
+        else if (result.value.outcome === 'unchanged') unchanged += 1;
+        else deferred += 1;
+      } else {
+        errors += 1;
+        this.logger.error(
+          { exchangeId: ids[index], err: result.reason },
+          'Unexpected error while checking exchange',
+        );
+      }
+    });
+    return { claimed: ids.length, transitioned, unchanged, deferred, errors };
   }
 
   // --- Внутренняя логика --------------------------------------------------------
@@ -449,6 +582,7 @@ export class ExchangeService {
       at: this.now(),
       nextCheckAt: options.nextCheckAt,
       ...(options.patch ? { patch: options.patch } : {}),
+      ...(options.notification ? { notification: options.notification } : {}),
     });
     this.logger.info(
       { exchangeId: exchange.id, from: exchange.status, to, reason },

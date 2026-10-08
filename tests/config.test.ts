@@ -26,6 +26,34 @@ describe('parseConfig', () => {
     expect(config.shutdownTimeoutMs).toBe(5000);
   });
 
+  describe('TELEGRAM_BOT_TOKEN', () => {
+    const token = '1234567890:AAExampleTokenForTestsOnly_0123456789abc';
+
+    it('необязателен: без него бот не запускается', () => {
+      expect(parseConfig(validEnv).telegramBotToken).toBeUndefined();
+      expect(parseConfig({ ...validEnv, TELEGRAM_BOT_TOKEN: '' }).telegramBotToken).toBeUndefined();
+      expect(
+        parseConfig({ ...validEnv, TELEGRAM_BOT_TOKEN: '  ' }).telegramBotToken,
+      ).toBeUndefined();
+    });
+
+    it('принимает токен в формате BotFather', () => {
+      expect(parseConfig({ ...validEnv, TELEGRAM_BOT_TOKEN: token }).telegramBotToken).toBe(token);
+    });
+
+    it('отклоняет некорректный токен и не раскрывает его значение', () => {
+      const broken = 'not-a-real-token-but-secret-looking-value';
+      try {
+        parseConfig({ ...validEnv, TELEGRAM_BOT_TOKEN: broken });
+        expect.unreachable('parseConfig должен выбросить ошибку');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        expect((error as ConfigError).message).toContain('TELEGRAM_BOT_TOKEN');
+        expect((error as ConfigError).message).not.toContain(broken);
+      }
+    });
+  });
+
   it('требует DATABASE_URL', () => {
     expect(() => parseConfig({})).toThrow(ConfigError);
   });

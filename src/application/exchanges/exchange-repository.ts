@@ -10,6 +10,7 @@
 import type { ExchangeRecord, ExchangeProviderKind } from '../../domain/exchanges/exchange.js';
 import type { RateType } from '../../domain/exchanges/exchange-provider.js';
 import type { ExchangeStatus } from '../../domain/exchanges/status-transitions.js';
+import type { NotificationDraft } from '../notifications/notification-repository.js';
 
 export interface NewDraft {
   readonly userId: string;
@@ -54,6 +55,12 @@ export interface TransitionParams {
   /** NULL допустим только для терминальных статусов (инвариант в БД). */
   readonly nextCheckAt: Date | null;
   readonly patch?: ExchangePatch;
+  /**
+   * Уведомление для пользователя. Записывается в outbox в той же транзакции,
+   * что и переход, с dedupeKey по записи истории: переход без уведомления
+   * и уведомление без перехода невозможны.
+   */
+  readonly notification?: NotificationDraft;
 }
 
 export interface CheckFailureParams {
@@ -71,6 +78,16 @@ export interface CheckSuccessParams {
   readonly providerStatus: string;
 }
 
+export interface ClaimDueParams {
+  /** Обмены с nextCheckAt <= now считаются созревшими. */
+  readonly now: Date;
+  readonly limit: number;
+  /** Статусы, которые нужно опрашивать у провайдера. Обмен без providerExchangeId не берётся. */
+  readonly statuses: readonly ExchangeStatus[];
+  /** Новый nextCheckAt захваченных обменов (lease): до этого момента их не возьмёт другой worker. */
+  readonly leaseUntil: Date;
+}
+
 export interface ExchangeRepository {
   /**
    * Создаёт черновик вместе с первой записью истории. Повторный вызов с тем же
@@ -80,6 +97,9 @@ export interface ExchangeRepository {
 
   findById(exchangeId: string): Promise<ExchangeRecord | null>;
 
+  /** Последние обмены пользователя, новые первыми. */
+  listByUser(userId: string, limit: number): Promise<ExchangeRecord[]>;
+
   /** Compare-and-set переход статуса с записью истории. */
   transition(params: TransitionParams): Promise<ExchangeRecord>;
 
@@ -88,4 +108,11 @@ export interface ExchangeRepository {
 
   /** Успешная проверка без смены внутреннего статуса: счётчик сбрасывается. */
   recordCheckSuccess(params: CheckSuccessParams): Promise<ExchangeRecord>;
+
+  /**
+   * Атомарно захватывает созревшие обмены и сдвигает их nextCheckAt на leaseUntil.
+   * Параллельные вызовы не получают один и тот же обмен. Если worker упал, lease
+   * истекает, и обмен будет проверен снова. Возвращает идентификаторы обменов.
+   */
+  claimDueForProviderCheck(params: ClaimDueParams): Promise<string[]>;
 }
