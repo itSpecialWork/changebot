@@ -28,8 +28,8 @@ export interface ProviderCurrency {
   readonly extraId: ExtraIdRequirement;
   readonly supportsFixedRate: boolean;
   /**
-   * Популярная валюта. Когда каталог не влезает в кнопки Telegram,
-   * первый экран показывает только такие валюты, остальные ищутся по тикеру.
+   * Отметка провайдера «популярная валюта». Первый экран бота её не использует:
+   * там свой короткий список, а полный каталог открывается отдельной кнопкой.
    */
   readonly featured: boolean;
 }
@@ -45,6 +45,17 @@ export interface CurrencyPair {
 export interface QuoteRequest extends CurrencyPair {
   readonly fromAmount: string;
   readonly rateType: RateType;
+}
+
+/** Запрос допустимого диапазона суммы отправки для пары и типа курса. */
+export interface AmountRangeRequest extends CurrencyPair {
+  readonly rateType: RateType;
+}
+
+/** Минимум обязателен. Максимум есть не у каждой пары. Суммы — десятичные строки. */
+export interface ProviderAmountRange {
+  readonly minAmount: string;
+  readonly maxAmount: string | null;
 }
 
 export interface ProviderQuote {
@@ -139,6 +150,10 @@ export class ExchangeProviderError extends Error {
 export interface ExchangeProvider {
   getCurrencies(options?: ProviderCallOptions): Promise<readonly ProviderCurrency[]>;
   getQuote(request: QuoteRequest, options?: ProviderCallOptions): Promise<ProviderQuote>;
+  getAmountRange(
+    request: AmountRangeRequest,
+    options?: ProviderCallOptions,
+  ): Promise<ProviderAmountRange>;
   createExchange(
     request: CreateExchangeRequest,
     options?: ProviderCallOptions,

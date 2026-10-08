@@ -73,6 +73,13 @@ describe('listCurrencies и previewQuote', () => {
     ).rejects.toBeInstanceOf(InvalidExchangeInputError);
   });
 
+  it('отдаёт диапазон суммы и ничего не сохраняет', async () => {
+    const range = await service.getAmountRange({ ...PAIR, rateType: 'FLOATING' });
+
+    expect(range).toEqual({ minAmount: '0.0001', maxAmount: '1000000' });
+    expect(repository.rows.size).toBe(0);
+  });
+
   it('пробрасывает ошибки провайдера', async () => {
     await expect(
       service.previewQuote({ ...PAIR, fromAmount: '0.000001', rateType: 'FLOATING' }),

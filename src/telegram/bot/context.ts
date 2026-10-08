@@ -7,7 +7,11 @@
 import type { Context, SessionFlavor } from 'grammy';
 import type { ExchangeService } from '../../application/exchanges/exchange-service.js';
 import type { UserService } from '../../application/users/user-service.js';
-import type { ExtraIdRequirement, RateType } from '../../domain/exchanges/exchange-provider.js';
+import type {
+  ExtraIdRequirement,
+  ProviderAmountRange,
+  RateType,
+} from '../../domain/exchanges/exchange-provider.js';
 import type { UserRecord } from '../../domain/users/user.js';
 import type { Logger } from '../../observability/logger.js';
 
@@ -37,6 +41,10 @@ export interface NewExchangeFlow {
   /** Фильтр каталога на шагах выбора валюты. Пустая строка — без поиска. */
   currencyQuery: string;
   currencyPage: number;
+  /** Короткий список актуальных валют или полный каталог. */
+  currencyCatalog: 'popular' | 'all';
+  /** Диапазон суммы, известный на шаге ввода. Нет, если провайдер его не отдал. */
+  amountRange?: ProviderAmountRange;
 }
 
 export interface SessionData {

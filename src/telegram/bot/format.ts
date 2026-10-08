@@ -48,10 +48,23 @@ export function statusEmoji(status: ExchangeStatus): string {
   return STATUS_EMOJI[status];
 }
 
+/**
+ * Как сеть выглядит в кнопке и тексте. Код провайдера сохраняется в callback.
+ * ChangeNOW называет BNB Smart Chain `bsc`, в интерфейсе это BNB.
+ */
+const NETWORK_LABELS: Readonly<Record<string, string>> = {
+  bsc: 'bnb',
+};
+
+export function networkLabel(network: string): string {
+  return NETWORK_LABELS[network] ?? network;
+}
+
 /** "USDT (trx)"; сеть не повторяется, если совпадает с тикером ("BTC"). */
 export function formatCurrency(ticker: string, network: string): string {
   const name = ticker.toUpperCase();
-  return ticker === network ? name : `${name} (${network})`;
+  const net = networkLabel(network);
+  return ticker === network || name.toLowerCase() === net ? name : `${name} (${net})`;
 }
 
 export function formatPair(exchange: Pick<ExchangeRecord, 'fromCurrency' | 'toCurrency'>): string {

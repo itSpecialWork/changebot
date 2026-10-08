@@ -15,6 +15,7 @@ beforeEach(async () => {
 async function reachConfirmation(userId = USER): Promise<string> {
   await bot.pressButton(userId, 'm:new');
   await bot.pressButton(userId, 'f:usdt:trx');
+  await bot.pressButton(userId, 'u:a');
   await bot.pressButton(userId, 't:btc:btc');
   await bot.pressButton(userId, 'r:F');
   await bot.sendText(userId, '100');
@@ -112,6 +113,7 @@ describe('бот: создание обмена', () => {
   it('фиксированный курс доступен только для поддерживаемых пар', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
     expect(bot.lastButtons()).toContain('r:F');
     expect(bot.lastButtons()).not.toContain('r:X');
@@ -124,6 +126,7 @@ describe('бот: создание обмена', () => {
   it('для валюты с обязательным memo запрашивает его', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
     await bot.pressButton(USER, 'r:F');
     await bot.sendText(USER, '10');
@@ -141,23 +144,27 @@ describe('бот: создание обмена', () => {
   it('просит ввести сумму заново при мусоре и выходе за лимиты', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
     await bot.pressButton(USER, 'r:F');
+    expect(bot.lastText()).toContain('Минимум: <b>0.0001</b>');
+    expect(bot.lastText()).not.toContain('100</code>');
 
     await bot.sendText(USER, 'много');
-    expect(bot.lastText()).toContain('числом');
+    expect(bot.lastText()).toContain('Это не сумма');
 
     await bot.sendText(USER, '0.000001');
-    expect(bot.lastText()).toContain('вне допустимого диапазона');
+    expect(bot.lastText()).toContain('меньше минимума');
 
     await bot.sendText(USER, '5000000');
-    expect(bot.lastText()).toContain('вне допустимого диапазона');
+    expect(bot.lastText()).toContain('больше максимума');
     expect(bot.exchangeRepository.rows.size).toBe(0);
   });
 
   it('отклоняет некорректный адрес и не создаёт обмен', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
     await bot.pressButton(USER, 'r:F');
     await bot.sendText(USER, '100');
@@ -170,11 +177,11 @@ describe('бот: создание обмена', () => {
 
   it('неподдерживаемая пара сообщается на шаге суммы, черновик не создаётся', async () => {
     await bot.pressButton(USER, 'm:new');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 'f:btc:btc');
+    await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
     await bot.pressButton(USER, 'r:F');
-
-    await bot.sendText(USER, '1');
 
     expect(bot.lastText()).toContain('недоступна');
     expect(bot.exchangeRepository.rows.size).toBe(0);

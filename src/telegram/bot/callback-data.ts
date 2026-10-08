@@ -19,7 +19,8 @@ export type CallbackAction =
   | { readonly kind: 'confirm'; readonly exchangeId: string }
   | { readonly kind: 'cancel'; readonly exchangeId: string }
   | { readonly kind: 'demo'; readonly exchangeId: string }
-  | { readonly kind: 'currency_page'; readonly direction: 'next' | 'prev' };
+  | { readonly kind: 'currency_page'; readonly direction: 'next' | 'prev' }
+  | { readonly kind: 'currency_catalog'; readonly catalog: 'popular' | 'all' };
 
 const MAX_CALLBACK_BYTES = 64;
 const CODE = '[a-z0-9_-]{1,20}';
@@ -35,6 +36,8 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'r:X': { kind: 'rate', rateType: 'FIXED' },
   'u:n': { kind: 'currency_page', direction: 'next' },
   'u:p': { kind: 'currency_page', direction: 'prev' },
+  'u:h': { kind: 'currency_catalog', catalog: 'popular' },
+  'u:a': { kind: 'currency_catalog', catalog: 'all' },
 };
 
 const CURRENCY_PATTERN = new RegExp(`^([ft]):(${CODE}):(${CODE})$`);
@@ -97,4 +100,6 @@ export const callbackData = {
   demo: (exchangeId: string): string => checked(`d:${exchangeId}`),
   currencyNext: 'u:n',
   currencyPrev: 'u:p',
+  currencyPopular: 'u:h',
+  currencyAll: 'u:a',
 } as const;

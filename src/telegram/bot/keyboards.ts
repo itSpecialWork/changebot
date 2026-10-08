@@ -3,26 +3,56 @@ import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
 import type { ProviderCurrency } from '../../domain/exchanges/exchange-provider.js';
 import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
-import { formatListButton } from './format.js';
+import { formatListButton, networkLabel } from './format.js';
 
 /** Сколько валют помещается на один экран кнопок. */
 export const CURRENCY_PAGE_SIZE = 48;
 
+/**
+ * Короткий список на кнопке «Новый обмен».
+ * USDT в сети BNB у ChangeNOW имеет код `bsc`; если его нет, берётся `bnb`.
+ * Из двух кодов показывается один, чтобы не было двух одинаковых кнопок.
+ */
+const POPULAR_PAIRS: readonly { readonly ticker: string; readonly networks: readonly string[] }[] =
+  [
+    { ticker: 'usdt', networks: ['trx'] },
+    { ticker: 'usdt', networks: ['bsc', 'bnb'] },
+  ];
+
+export type CurrencyCatalog = 'popular' | 'all';
+
 export interface CurrencySelection {
-  readonly mode: 'all' | 'featured' | 'search';
+  readonly mode: 'all' | 'popular' | 'search';
   readonly items: readonly ProviderCurrency[];
   readonly page: number;
   readonly pageCount: number;
 }
 
+function popularCurrencies(currencies: readonly ProviderCurrency[]): ProviderCurrency[] {
+  const byKey = new Map(
+    currencies.map((currency) => [`${currency.ticker}:${currency.network}`, currency]),
+  );
+  const picked: ProviderCurrency[] = [];
+  for (const pair of POPULAR_PAIRS) {
+    for (const network of pair.networks) {
+      const currency = byKey.get(`${pair.ticker}:${network}`);
+      if (currency) {
+        picked.push(currency);
+        break;
+      }
+    }
+  }
+  return picked;
+}
+
 /**
  * Страница валют для кнопок.
- * Короткий каталог показывается целиком. Длинный без запроса — только featured.
+ * Без запроса: короткий список актуальных валют или полный каталог.
  * Небезопасные тикер и сеть в кнопки не попадают: callback их не примет.
  */
 export function selectCurrencies(
   currencies: readonly ProviderCurrency[],
-  state: { readonly query: string; readonly page: number },
+  state: { readonly query: string; readonly page: number; readonly catalog: CurrencyCatalog },
 ): CurrencySelection {
   const safe = currencies.filter(
     (currency) => isCallbackSafeCode(currency.ticker) && isCallbackSafeCode(currency.network),
@@ -35,12 +65,12 @@ export function selectCurrencies(
     pool = safe.filter(
       (currency) => currency.ticker.includes(query) || currency.name.toLowerCase().includes(query),
     );
-  } else if (safe.length <= CURRENCY_PAGE_SIZE) {
+  } else if (state.catalog === 'popular') {
+    mode = 'popular';
+    pool = popularCurrencies(safe);
+  } else {
     mode = 'all';
     pool = safe;
-  } else {
-    mode = 'featured';
-    pool = safe.filter((currency) => currency.featured);
   }
 
   const pageCount = Math.max(1, Math.ceil(pool.length / CURRENCY_PAGE_SIZE));
@@ -79,12 +109,25 @@ export function currencyKeyboard(
       keyboard.text('Дальше ▶️', callbackData.currencyNext);
   }
   breakRow(keyboard);
+  if (selection.mode === 'popular') {
+    keyboard.text('📋 Все валюты', callbackData.currencyAll);
+  } else if (selection.mode === 'all') {
+    keyboard.text('⭐ Актуальные', callbackData.currencyPopular);
+  } else {
+    keyboard
+      .text('⭐ Актуальные', callbackData.currencyPopular)
+      .text('📋 Все валюты', callbackData.currencyAll);
+  }
+  breakRow(keyboard);
   return keyboard.text('❌ Отмена', callbackData.menu);
 }
 
 function currencyButtonLabel(currency: ProviderCurrency): string {
   const ticker = currency.ticker.toUpperCase();
-  return currency.ticker === currency.network ? ticker : `${ticker} · ${currency.network}`;
+  const network = networkLabel(currency.network);
+  return currency.ticker === currency.network || ticker.toLowerCase() === network
+    ? ticker
+    : `${ticker} · ${network}`;
 }
 
 /** Новая строка, если текущая уже не пустая. Пустые ряды Telegram не принимает. */

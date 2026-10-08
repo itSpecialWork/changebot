@@ -12,9 +12,11 @@ import {
 } from '../../domain/shared/decimal-string.js';
 import {
   ExchangeProviderError,
+  type AmountRangeRequest,
   type CreateExchangeRequest,
   type ExchangeProvider,
   type ExtraIdRequirement,
+  type ProviderAmountRange,
   type ProviderCallOptions,
   type ProviderCurrency,
   type ProviderExchange,
@@ -30,6 +32,7 @@ import {
   changeNowCurrencySchema,
   changeNowExchangeStatusSchema,
   changeNowQuoteSchema,
+  changeNowRangeSchema,
   type ChangeNowCurrency,
 } from './schemas.js';
 
@@ -141,6 +144,29 @@ export class ChangeNowExchangeProvider implements ExchangeProvider {
       throw new ExchangeProviderError('UNAVAILABLE', 'Provider quote expiry is invalid');
     }
     return { rateType: 'FIXED', fromAmount, toAmount, rateId, expiresAt };
+  }
+
+  async getAmountRange(
+    request: AmountRangeRequest,
+    options?: ProviderCallOptions,
+  ): Promise<ProviderAmountRange> {
+    const signal = this.signalFor(options);
+    const url = new URL('/v2/exchange/range', this.baseUrl);
+    url.searchParams.set('fromCurrency', request.fromCurrency);
+    url.searchParams.set('toCurrency', request.toCurrency);
+    url.searchParams.set('fromNetwork', request.fromNetwork);
+    url.searchParams.set('toNetwork', request.toNetwork);
+    url.searchParams.set('flow', request.rateType === 'FIXED' ? 'fixed-rate' : 'standard');
+
+    const body = await this.request('GET', `${url.pathname}${url.search}`, undefined, signal);
+    const parsed = changeNowRangeSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new ExchangeProviderError('UNAVAILABLE', 'Unexpected range response');
+    }
+    return {
+      minAmount: requireAmount(parsed.data.minAmount),
+      maxAmount: parsed.data.maxAmount === null ? null : requireAmount(parsed.data.maxAmount),
+    };
   }
 
   async createExchange(

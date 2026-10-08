@@ -15,6 +15,7 @@ import {
   ExchangeProviderError,
   type CurrencyPair,
   type ExchangeProvider,
+  type ProviderAmountRange,
   type ProviderCurrency,
   type ProviderExchangeStatus,
   type ProviderQuote,
@@ -101,6 +102,10 @@ export interface CreateDraftInput {
 
 export interface PreviewQuoteInput extends CurrencyPair {
   readonly fromAmount: string;
+  readonly rateType: RateType;
+}
+
+export interface AmountRangeInput extends CurrencyPair {
   readonly rateType: RateType;
 }
 
@@ -252,6 +257,27 @@ export class ExchangeService {
       },
       this.callOptions(),
     );
+  }
+
+  /**
+   * Допустимый диапазон суммы отправки для уже выбранной пары.
+   * Ничего не сохраняет. Суммы приводятся к десятичным строкам.
+   */
+  async getAmountRange(input: AmountRangeInput): Promise<ProviderAmountRange> {
+    const range = await this.provider.getAmountRange(
+      {
+        fromCurrency: input.fromCurrency,
+        fromNetwork: input.fromNetwork,
+        toCurrency: input.toCurrency,
+        toNetwork: input.toNetwork,
+        rateType: input.rateType,
+      },
+      this.callOptions(),
+    );
+    return {
+      minAmount: normalizeAmount(range.minAmount),
+      maxAmount: range.maxAmount === null ? null : normalizeAmount(range.maxAmount),
+    };
   }
 
   /** Обмен пользователя. Чужой обмен неотличим от несуществующего. */

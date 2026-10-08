@@ -3,7 +3,11 @@ import { callbackData, parseCallbackData } from '../../../src/telegram/bot/callb
 import type { BotContext } from '../../../src/telegram/bot/context.js';
 import type { ExchangeRecord } from '../../../src/domain/exchanges/exchange.js';
 import { describeErrorForLog } from '../../../src/telegram/bot/create-bot.js';
-import { escapeHtml, renderExchangeCard } from '../../../src/telegram/bot/format.js';
+import {
+  escapeHtml,
+  formatCurrency,
+  renderExchangeCard,
+} from '../../../src/telegram/bot/format.js';
 import {
   parseAddressInput,
   parseAmountInput,
@@ -38,6 +42,14 @@ describe('callback data', () => {
       kind: 'currency_page',
       direction: 'prev',
     });
+    expect(parseCallbackData(callbackData.currencyPopular)).toEqual({
+      kind: 'currency_catalog',
+      catalog: 'popular',
+    });
+    expect(parseCallbackData(callbackData.currencyAll)).toEqual({
+      kind: 'currency_catalog',
+      catalog: 'all',
+    });
     for (const build of [
       callbackData.open,
       callbackData.confirm,
@@ -64,6 +76,15 @@ describe('callback data', () => {
     `z:${UUID}`,
   ])('отклоняет чужие данные %j', (data) => {
     expect(parseCallbackData(data)).toBeUndefined();
+  });
+});
+
+describe('подпись валюты', () => {
+  it('показывает сеть BNB вместо кода bsc и не повторяет сеть у нативной монеты', () => {
+    expect(formatCurrency('usdt', 'trx')).toBe('USDT (trx)');
+    expect(formatCurrency('usdt', 'bsc')).toBe('USDT (bnb)');
+    expect(formatCurrency('btc', 'btc')).toBe('BTC');
+    expect(formatCurrency('bnb', 'bsc')).toBe('BNB');
   });
 });
 

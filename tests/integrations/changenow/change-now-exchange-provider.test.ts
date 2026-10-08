@@ -196,6 +196,64 @@ describe('ChangeNowExchangeProvider', () => {
     expect(quote.expiresAt?.toISOString()).toBe('2023-11-07T09:21:27.448Z');
   });
 
+  it('диапазон суммы читает минимум строкой, пустой максимум — как null', async () => {
+    const { provider, calls } = createHarness((url) => {
+      expect(url).toContain('/v2/exchange/range?');
+      expect(url).toContain('fromCurrency=btc');
+      expect(url).toContain('fromNetwork=btc');
+      expect(url).toContain('toCurrency=usdt');
+      expect(url).toContain('toNetwork=eth');
+      expect(url).toContain('flow=standard');
+      return jsonResponse(200, fixture('range-standard.json'));
+    });
+
+    const range = await provider.getAmountRange({
+      fromCurrency: floatingQuote.fromCurrency,
+      fromNetwork: floatingQuote.fromNetwork,
+      toCurrency: floatingQuote.toCurrency,
+      toNetwork: floatingQuote.toNetwork,
+      rateType: 'FLOATING',
+    });
+
+    expect(calls[0]?.init.method).toBe('GET');
+    expect(header(calls[0]?.init ?? {}, 'x-changenow-api-key')).toBe(API_KEY);
+    expect(range).toEqual({ minAmount: '0.0002625', maxAmount: null });
+  });
+
+  it('фиксированный диапазон запрашивает flow fixed-rate и оба предела', async () => {
+    const { provider } = createHarness((url) => {
+      expect(url).toContain('flow=fixed-rate');
+      return jsonResponse(200, '{"minAmount":1.5,"maxAmount":10}');
+    });
+
+    const range = await provider.getAmountRange({
+      fromCurrency: 'usdt',
+      fromNetwork: 'trx',
+      toCurrency: 'btc',
+      toNetwork: 'btc',
+      rateType: 'FIXED',
+    });
+
+    expect(range).toEqual({ minAmount: '1.5', maxAmount: '10' });
+  });
+
+  it('неподдерживаемая пара в диапазоне становится PAIR_NOT_SUPPORTED', async () => {
+    const { provider } = createHarness(() =>
+      jsonResponse(400, '{"error":"not_valid_params","message":"Currency t is not supported"}'),
+    );
+
+    await expectCode(
+      provider.getAmountRange({
+        fromCurrency: 'btc',
+        fromNetwork: 'btc',
+        toCurrency: 't',
+        toNetwork: 'eth',
+        rateType: 'FLOATING',
+      }),
+      'PAIR_NOT_SUPPORTED',
+    );
+  });
+
   it('фиксированная котировка без rateId отклоняется', async () => {
     const { provider } = createHarness(() => jsonResponse(200, fixture('estimated-floating.json')));
 

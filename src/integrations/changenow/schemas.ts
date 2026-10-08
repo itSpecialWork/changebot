@@ -24,6 +24,11 @@ export const changeNowQuoteSchema = z.object({
   validUntil: z.string().nullable(),
 });
 
+export const changeNowRangeSchema = z.object({
+  minAmount: z.string().min(1),
+  maxAmount: z.string().nullable(),
+});
+
 export const changeNowCreatedExchangeSchema = z.object({
   id: z.string().min(1),
   payinAddress: z.string().min(1),

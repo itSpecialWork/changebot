@@ -88,6 +88,8 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return exchanges.advanceDemo(ctx, action.exchangeId);
       case 'currency_page':
         return newExchange.changePage(ctx, action.direction);
+      case 'currency_catalog':
+        return newExchange.setCatalog(ctx, action.catalog);
     }
   }
 

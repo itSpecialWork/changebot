@@ -20,8 +20,9 @@ function callbacks(
   currencies: readonly ProviderCurrency[],
   query = '',
   page = 0,
+  catalog: 'popular' | 'all' = 'popular',
 ): string[] {
-  const selection = selectCurrencies(currencies, { query, page });
+  const selection = selectCurrencies(currencies, { query, page, catalog });
   return currencyKeyboard(kind, selection)
     .inline_keyboard.flat()
     .flatMap((button) =>
@@ -30,30 +31,39 @@ function callbacks(
 }
 
 describe('клавиатура валют', () => {
-  it('короткий список показывает все безопасные валюты', () => {
-    const buttons = callbacks('from', [
-      currency('btc', 'Bitcoin', true, 'btc'),
-      currency('usdt', 'Tether', true, 'trx'),
-      currency('bad ticker', 'Unsafe', true),
-    ]);
-
-    expect(buttons).toEqual(['f:btc:btc', 'f:usdt:trx', 'm:menu']);
-  });
-
-  it('длинный каталог без запроса показывает только featured', () => {
-    const many = Array.from({ length: CURRENCY_PAGE_SIZE + 1 }, (_, index) =>
-      currency(`c${String(index)}`, `Coin ${String(index)}`),
-    );
+  it('актуальный список — USDT trx и USDT bsc, сеть bsc подписана как bnb', () => {
     const currencies = [
-      ...many,
       currency('btc', 'Bitcoin', true, 'btc'),
+      currency('usdt', 'Tether TRC20', false, 'trx'),
+      currency('usdt', 'Tether BEP20', false, 'bsc'),
+      currency('usdt', 'Tether BNB', false, 'bnb'),
       currency('bad ticker', 'Unsafe', true),
     ];
+    const selection = selectCurrencies(currencies, { query: '', page: 0, catalog: 'popular' });
+    const labels = currencyKeyboard('from', selection)
+      .inline_keyboard.flat()
+      .flatMap((button) => ('text' in button ? [button.text] : []));
 
-    const buttons = callbacks('from', currencies);
+    expect(callbacks('from', currencies)).toEqual(['f:usdt:trx', 'f:usdt:bsc', 'u:a', 'm:menu']);
+    expect(labels).toContain('USDT · trx');
+    expect(labels).toContain('USDT · bnb');
+    expect(labels).not.toContain('USDT · bsc');
+    expect(selection.mode).toBe('popular');
+  });
 
-    expect(buttons).toEqual(['f:btc:btc', 'm:menu']);
-    expect(selectCurrencies(currencies, { query: '', page: 0 }).mode).toBe('featured');
+  it('полный каталог листает все безопасные валюты и возвращает к актуальным', () => {
+    const many = Array.from({ length: CURRENCY_PAGE_SIZE + 1 }, (_, index) =>
+      currency(`c${String(index)}`, `Coin ${String(index)}`, false, `n${String(index)}`),
+    );
+
+    const buttons = callbacks('from', many, '', 0, 'all');
+
+    expect(buttons).toContain('f:c0:n0');
+    expect(buttons).toContain('u:n');
+    expect(buttons).toContain('u:h');
+    expect(buttons).not.toContain('u:a');
+    expect(buttons.filter((data) => data.startsWith('f:'))).toHaveLength(CURRENCY_PAGE_SIZE);
+    expect(selectCurrencies(many, { query: '', page: 0, catalog: 'all' }).mode).toBe('all');
   });
 
   it('поиск usdt даёт кнопки с сетью и листается, если совпадений больше страницы', () => {
@@ -61,13 +71,13 @@ describe('клавиатура валют', () => {
       currency('usdt', `Tether ${String(index)}`, false, `n${String(index)}`),
     );
 
-    const first = callbacks('to', matches, 'usdt', 0);
+    const first = callbacks('to', matches, 'usdt', 0, 'all');
     expect(first).toContain('t:usdt:n0');
     expect(first).toContain('u:n');
     expect(first).not.toContain('u:p');
     expect(first.filter((data) => data.startsWith('t:'))).toHaveLength(CURRENCY_PAGE_SIZE);
 
-    const second = callbacks('to', matches, 'tether', 1);
+    const second = callbacks('to', matches, 'tether', 1, 'popular');
     expect(second).toContain('u:p');
     expect(second).not.toContain('u:n');
     expect(second.filter((data) => data.startsWith('t:'))).toHaveLength(1);

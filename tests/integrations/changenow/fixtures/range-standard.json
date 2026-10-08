@@ -1,0 +1,9 @@
+{
+  "fromCurrency": "btc",
+  "fromNetwork": "btc",
+  "toCurrency": "usdt",
+  "toNetwork": "eth",
+  "flow": "standard",
+  "maxAmount": null,
+  "minAmount": 0.0002625
+}

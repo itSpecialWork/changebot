@@ -17,9 +17,11 @@ import {
 } from '../../domain/shared/decimal-string.js';
 import {
   ExchangeProviderError,
+  type AmountRangeRequest,
   type CreateExchangeRequest,
   type CurrencyPair,
   type ExchangeProvider,
+  type ProviderAmountRange,
   type ProviderCallOptions,
   type ProviderCurrency,
   type ProviderExchange,
@@ -158,6 +160,17 @@ export class MockExchangeProvider implements ExchangeProvider {
     });
   }
 
+  getAmountRange(
+    request: AmountRangeRequest,
+    options?: ProviderCallOptions,
+  ): Promise<ProviderAmountRange> {
+    return Promise.resolve().then(() => {
+      throwIfAborted(options);
+      this.requirePair(request);
+      return { minAmount: this.minFromAmount, maxAmount: this.maxFromAmount };
+    });
+  }
+
   createExchange(
     request: CreateExchangeRequest,
     options?: ProviderCallOptions,
@@ -229,14 +242,27 @@ export class MockExchangeProvider implements ExchangeProvider {
     return this.currencies.find((c) => c.ticker === ticker && c.network === network);
   }
 
-  /** Проверяет пару и сумму, возвращает сумму получения (округление вниз). */
-  private calculate(request: QuoteRequest): { toAmount: string; toCurrency: ProviderCurrency } {
+  /** Пара должна существовать в каталоге и иметь курс. Иначе диапазон и котировка недоступны. */
+  private requirePair(request: CurrencyPair & { readonly rateType: QuoteRequest['rateType'] }): {
+    from: ProviderCurrency;
+    to: ProviderCurrency;
+    rate: string;
+  } {
     const from = this.findCurrency(request.fromCurrency, request.fromNetwork);
     const to = this.findCurrency(request.toCurrency, request.toNetwork);
     const rate = this.rates[pairKey(request)];
     if (!from || !to || rate === undefined) {
       throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Currency pair is not supported');
     }
+    if (request.rateType === 'FIXED' && !(from.supportsFixedRate && to.supportsFixedRate)) {
+      throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Fixed rate is not supported for pair');
+    }
+    return { from, to, rate };
+  }
+
+  /** Проверяет пару и сумму, возвращает сумму получения (округление вниз). */
+  private calculate(request: QuoteRequest): { toAmount: string; toCurrency: ProviderCurrency } {
+    const { rate, to } = this.requirePair(request);
 
     try {
       parseDecimal(request.fromAmount);
@@ -249,10 +275,6 @@ export class MockExchangeProvider implements ExchangeProvider {
     ) {
       throw new ExchangeProviderError('AMOUNT_OUT_OF_RANGE', 'Amount is out of allowed range');
     }
-    if (request.rateType === 'FIXED' && !(from.supportsFixedRate && to.supportsFixedRate)) {
-      throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Fixed rate is not supported for pair');
-    }
-
     const toAmount = multiplyDecimal(request.fromAmount, rate);
     if (parseDecimal(toAmount) === 0n) {
       throw new ExchangeProviderError('AMOUNT_OUT_OF_RANGE', 'Amount is too small');
