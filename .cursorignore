@@ -1,0 +1,18 @@
+# Секреты и локальное окружение
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+secrets/
+credentials*.json
+
+# Зависимости, сборка, артефакты
+node_modules/
+dist/
+coverage/
+*.log
+src/database/generated/

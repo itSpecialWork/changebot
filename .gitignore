@@ -1,0 +1,24 @@
+# Зависимости и сборка
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Окружение и секреты
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Prisma generated client
+src/database/generated/
+
+# Логи
+*.log
+npm-debug.log*
+
+# ОС / редакторы
+.DS_Store
+.idea/
+.vscode/

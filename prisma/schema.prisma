@@ -1,0 +1,11 @@
+// Инфраструктурный этап: моделей пока нет.
+// Бизнес-сущности и миграции добавляются в следующих этапах.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/database/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}

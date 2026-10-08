@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+src/database/generated
+package-lock.json
+.env
+AGENTS.md
+docs
