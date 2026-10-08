@@ -20,7 +20,9 @@ import {
   exchangeCardKeyboard,
   mainMenuKeyboard,
   rateTypeKeyboard,
+  selectCurrencies,
   skipExtraIdKeyboard,
+  type CurrencySelection,
 } from '../keyboards.js';
 import { parseAddressInput, parseAmountInput, parseExtraIdInput } from '../input.js';
 import { reply, show } from '../ui.js';
@@ -42,6 +44,32 @@ function sameCurrency(a: CurrencyChoice, b: CurrencyChoice): boolean {
   return a.ticker === b.ticker && a.network === b.network;
 }
 
+const MAX_CURRENCY_QUERY = 32;
+
+function currencyStepText(
+  step: 'from' | 'to',
+  flow: NewExchangeFlow,
+  selection: CurrencySelection,
+): string {
+  if (selection.mode === 'search' && selection.items.length === 0) {
+    return 'Ничего не найдено. Введите тикер, например <code>btc</code>.';
+  }
+  const queryLine =
+    selection.mode === 'search'
+      ? `\nСовпадения по запросу <code>${escapeHtml(flow.currencyQuery)}</code>.`
+      : selection.mode === 'featured'
+        ? '\nПопулярные валюты ниже. Или напишите тикер, например <code>usdt</code>.'
+        : '';
+  if (step === 'from') {
+    return `<b>Новый обмен</b>\nЧто вы отдаёте?${queryLine}`;
+  }
+  const from = flow.from;
+  const head = from
+    ? `Вы отдаёте: <b>${escapeHtml(label(from))}</b>\nЧто хотите получить?`
+    : 'Что хотите получить?';
+  return `${head}${queryLine}`;
+}
+
 export function createNewExchangeHandlers(deps: BotDependencies) {
   const demo = deps.demo !== undefined;
 
@@ -56,6 +84,31 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
   ): Promise<ProviderCurrency | undefined> {
     const currencies = await deps.exchanges.listCurrencies();
     return currencies.find((c) => c.ticker === ticker && c.network === network);
+  }
+
+  async function showCurrencies(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
+    if (flow.step !== 'from' && flow.step !== 'to') {
+      await staleButton(ctx);
+      return;
+    }
+    const all = await deps.exchanges.listCurrencies();
+    const from = flow.from;
+    const currencies =
+      flow.step === 'to' && from
+        ? all.filter(
+            (currency) => !(currency.ticker === from.ticker && currency.network === from.network),
+          )
+        : all;
+    const selection = selectCurrencies(currencies, {
+      query: flow.currencyQuery,
+      page: flow.currencyPage,
+    });
+    flow.currencyPage = selection.page;
+    await show(
+      ctx,
+      currencyStepText(flow.step, flow, selection),
+      currencyKeyboard(flow.step, selection),
+    );
   }
 
   /** Создаёт черновик, получает котировку и показывает карточку подтверждения. */
@@ -197,6 +250,25 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     }
   }
 
+  async function onCurrencyQuery(
+    ctx: BotContext,
+    flow: NewExchangeFlow,
+    text: string,
+  ): Promise<void> {
+    const query = text.trim().toLowerCase();
+    if (query.length > MAX_CURRENCY_QUERY) {
+      await reply(
+        ctx,
+        'Слишком длинный запрос. Введите короткий тикер, например <code>btc</code>.',
+        cancelFlowKeyboard(),
+      );
+      return;
+    }
+    flow.currencyQuery = query;
+    flow.currencyPage = 0;
+    await showCurrencies(ctx, flow);
+  }
+
   async function onExtraId(ctx: BotContext, flow: NewExchangeFlow, text: string): Promise<void> {
     const extraId = parseExtraIdInput(text);
     if (extraId === undefined) {
@@ -212,9 +284,14 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
 
   return {
     async start(ctx: BotContext): Promise<void> {
-      const currencies = await deps.exchanges.listCurrencies();
-      ctx.session.flow = { id: randomUUID(), step: 'from' };
-      await show(ctx, '<b>Новый обмен</b>\nЧто вы отдаёте?', currencyKeyboard(currencies, 'from'));
+      const flow: NewExchangeFlow = {
+        id: randomUUID(),
+        step: 'from',
+        currencyQuery: '',
+        currencyPage: 0,
+      };
+      ctx.session.flow = flow;
+      await showCurrencies(ctx, flow);
     },
 
     async selectFrom(ctx: BotContext, ticker: string, network: string): Promise<void> {
@@ -226,15 +303,19 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       }
       flow.from = toChoice(currency);
       flow.step = 'to';
-      const currencies = await deps.exchanges.listCurrencies();
-      await show(
-        ctx,
-        `Вы отдаёте: <b>${escapeHtml(label(flow.from))}</b>\nЧто хотите получить?`,
-        currencyKeyboard(
-          currencies.filter((c) => !(c.ticker === ticker && c.network === network)),
-          'to',
-        ),
-      );
+      flow.currencyQuery = '';
+      flow.currencyPage = 0;
+      await showCurrencies(ctx, flow);
+    },
+
+    async changePage(ctx: BotContext, direction: 'next' | 'prev'): Promise<void> {
+      const flow = ctx.session.flow;
+      if (!flow || (flow.step !== 'from' && flow.step !== 'to')) {
+        await staleButton(ctx);
+        return;
+      }
+      flow.currencyPage = direction === 'next' ? flow.currencyPage + 1 : flow.currencyPage - 1;
+      await showCurrencies(ctx, flow);
     },
 
     async selectTo(ctx: BotContext, ticker: string, network: string): Promise<void> {
@@ -287,6 +368,10 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       const flow = ctx.session.flow;
       if (!flow || text.startsWith('/')) return false;
       switch (flow.step) {
+        case 'from':
+        case 'to':
+          await onCurrencyQuery(ctx, flow, text);
+          break;
         case 'amount':
           await onAmount(ctx, flow, text);
           break;

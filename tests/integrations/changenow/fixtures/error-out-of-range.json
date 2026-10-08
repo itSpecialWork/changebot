@@ -1,0 +1,4 @@
+{
+  "error": "out_of_range",
+  "message": "Amount is less then minimal: 0.002644 BTC"
+}

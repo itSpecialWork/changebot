@@ -14,6 +14,9 @@ const telegramTokenSchema = z
     'must look like "<bot id>:<secret>" (token from @BotFather)',
   );
 
+const emptyToUndefined = (value: unknown): unknown =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1).default('127.0.0.1'),
@@ -22,10 +25,18 @@ const envSchema = z.object({
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(10_000),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   // Пустое значение (`TELEGRAM_BOT_TOKEN=`) равносильно отсутствию: бот не запускается.
-  TELEGRAM_BOT_TOKEN: z.preprocess(
-    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
-    telegramTokenSchema.optional(),
+  TELEGRAM_BOT_TOKEN: z.preprocess(emptyToUndefined, telegramTokenSchema.optional()),
+  /**
+   * Живой ChangeNOW выключен, пока флаг не равен строке `true`.
+   * Сообщение об ошибке не включает переданное значение.
+   */
+  CHANGENOW_ENABLED: z.preprocess(
+    (value) =>
+      value === undefined || (typeof value === 'string' && value.trim() === '') ? 'false' : value,
+    z.enum(['true', 'false'], { error: 'must be true or false' }),
   ),
+  // Пустое значение равносильно отсутствию ключа. Сам ключ в ошибку не попадает.
+  CHANGENOW_API_KEY: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
 });
 
 export interface AppConfig {
@@ -37,6 +48,13 @@ export interface AppConfig {
   readonly databaseUrl: string;
   /** Токен Telegram-бота. Не задан — бот и связанные с ним worker'ы не запускаются. */
   readonly telegramBotToken: string | undefined;
+  /** true — ChangeNOW API v2. false — тестовый провайдер в памяти. */
+  readonly changeNowEnabled: boolean;
+  /**
+   * Ключ ChangeNOW. Заполнен только при включённом флаге.
+   * При выключенном флаге отбрасывается, чтобы не лежать в объекте конфигурации.
+   */
+  readonly changeNowApiKey: string | undefined;
 }
 
 /**
@@ -60,6 +78,11 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
   }
 
   const env = result.data;
+  const changeNowEnabled = env.CHANGENOW_ENABLED === 'true';
+  if (changeNowEnabled && env.CHANGENOW_API_KEY === undefined) {
+    throw new ConfigError(['CHANGENOW_API_KEY: is required when CHANGENOW_ENABLED is true']);
+  }
+
   return Object.freeze({
     nodeEnv: env.NODE_ENV,
     host: env.HOST,
@@ -68,5 +91,7 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     shutdownTimeoutMs: env.SHUTDOWN_TIMEOUT_MS,
     databaseUrl: env.DATABASE_URL,
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
+    changeNowEnabled,
+    changeNowApiKey: changeNowEnabled ? env.CHANGENOW_API_KEY : undefined,
   });
 }

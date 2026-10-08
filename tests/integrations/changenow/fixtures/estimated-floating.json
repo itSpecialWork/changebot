@@ -1,0 +1,17 @@
+{
+  "fromCurrency": "btc",
+  "fromNetwork": "btc",
+  "toCurrency": "usdt",
+  "toNetwork": "eth",
+  "flow": "standard",
+  "type": "direct",
+  "rateId": null,
+  "validUntil": null,
+  "transactionSpeedForecast": "10-60",
+  "warningMessage": null,
+  "depositFee": 0.0001316,
+  "withdrawalFee": 3.0738305,
+  "userId": null,
+  "fromAmount": 0.1,
+  "toAmount": 3419.576832
+}

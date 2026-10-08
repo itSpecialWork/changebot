@@ -16,6 +16,8 @@ export const redactPaths = [
   '*.DATABASE_URL',
   '*.telegramBotToken',
   '*.TELEGRAM_BOT_TOKEN',
+  '*.changeNowApiKey',
+  '*.CHANGENOW_API_KEY',
   'password',
   'token',
   'apiKey',
@@ -24,6 +26,11 @@ export const redactPaths = [
   'DATABASE_URL',
   'telegramBotToken',
   'TELEGRAM_BOT_TOKEN',
+  'changeNowApiKey',
+  'CHANGENOW_API_KEY',
+  'req.headers["x-changenow-api-key"]',
+  'headers["x-changenow-api-key"]',
+  '*.headers["x-changenow-api-key"]',
 ];
 
 export function createLogger(config: Pick<AppConfig, 'nodeEnv' | 'logLevel'>): Logger {

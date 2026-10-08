@@ -44,16 +44,38 @@ const RAW_STATUS_TO_INTERNAL: Readonly<Record<string, ProviderExchangeStatusName
 const HAPPY_PATH = ['waiting', 'confirming', 'exchanging', 'sending', 'finished'] as const;
 
 export const DEFAULT_MOCK_CURRENCIES: readonly ProviderCurrency[] = [
-  { ticker: 'btc', network: 'btc', name: 'Bitcoin', extraId: 'none', supportsFixedRate: true },
-  { ticker: 'eth', network: 'eth', name: 'Ethereum', extraId: 'none', supportsFixedRate: true },
+  {
+    ticker: 'btc',
+    network: 'btc',
+    name: 'Bitcoin',
+    extraId: 'none',
+    supportsFixedRate: true,
+    featured: true,
+  },
+  {
+    ticker: 'eth',
+    network: 'eth',
+    name: 'Ethereum',
+    extraId: 'none',
+    supportsFixedRate: true,
+    featured: true,
+  },
   {
     ticker: 'usdt',
     network: 'trx',
     name: 'Tether (TRC20)',
     extraId: 'none',
     supportsFixedRate: true,
+    featured: true,
   },
-  { ticker: 'xrp', network: 'xrp', name: 'XRP', extraId: 'required', supportsFixedRate: false },
+  {
+    ticker: 'xrp',
+    network: 'xrp',
+    name: 'XRP',
+    extraId: 'required',
+    supportsFixedRate: false,
+    featured: true,
+  },
 ];
 
 /** Вымышленные курсы: ключ — `from:fromNetwork>to:toNetwork`, значение — сколько to за 1 from. */

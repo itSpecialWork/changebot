@@ -1,8 +1,8 @@
 /**
  * Composition root: сборка сервисов, репозиториев, worker'ов и бота.
  *
- * Это единственное место, где известны конкретные реализации. Пока подключён только
- * MockExchangeProvider: реальных обменов и обращений к ChangeNOW нет.
+ * Провайдер один на процесс. По умолчанию это мок. ChangeNOW подключается только
+ * при CHANGENOW_ENABLED=true и ключе из окружения. Демо-кнопка есть только у мока.
  *
  * Без TELEGRAM_BOT_TOKEN бот и worker'ы не запускаются (остаются HTTP и БД).
  */
@@ -12,13 +12,17 @@ import { NotificationService } from './application/notifications/notification-se
 import { UserService } from './application/users/user-service.js';
 import { BOT_COMMANDS, createBot, describeErrorForLog } from './telegram/bot/create-bot.js';
 import type { BotContext } from './telegram/bot/context.js';
-import type { AppConfig } from './config/env.js';
+import { ConfigError, type AppConfig } from './config/env.js';
 import type { PrismaClient } from './database/prisma.js';
 import { PrismaExchangeRepository } from './database/repositories/prisma-exchange-repository.js';
 import { PrismaNotificationOutboxRepository } from './database/repositories/prisma-notification-outbox-repository.js';
 import { PrismaUserRepository } from './database/repositories/prisma-user-repository.js';
+import type { ExchangeProvider } from './domain/exchanges/exchange-provider.js';
+import type { ExchangeProviderKind } from './domain/exchanges/exchange.js';
+import { ChangeNowExchangeProvider } from './integrations/changenow/change-now-exchange-provider.js';
 import { MockExchangeProvider } from './integrations/mock/mock-exchange-provider.js';
 import { TelegramNotificationSender } from './telegram/notifications/telegram-notification-sender.js';
+import type { DemoControls } from './telegram/bot/context.js';
 import type { Logger } from './observability/logger.js';
 import { ExchangeStatusWorker } from './workers/exchange-status-worker.js';
 import { NotificationOutboxWorker } from './workers/notification-outbox-worker.js';
@@ -47,6 +51,37 @@ export interface ApplicationOptions {
   readonly onFatalError: (error: unknown) => void;
 }
 
+export interface SelectedExchangeProvider {
+  readonly provider: ExchangeProvider;
+  readonly providerKind: ExchangeProviderKind;
+  readonly demo?: DemoControls;
+}
+
+/** Выбирает единственный провайдер процесса. Без ключа при включённом флаге не стартует. */
+export function selectExchangeProvider(config: AppConfig): SelectedExchangeProvider {
+  if (config.changeNowEnabled) {
+    const apiKey = config.changeNowApiKey;
+    if (apiKey === undefined) {
+      throw new ConfigError(['CHANGENOW_API_KEY: is required when CHANGENOW_ENABLED is true']);
+    }
+    return {
+      provider: new ChangeNowExchangeProvider({ apiKey }),
+      providerKind: 'CHANGENOW',
+    };
+  }
+
+  const provider = new MockExchangeProvider();
+  return {
+    provider,
+    providerKind: 'MOCK',
+    demo: {
+      advanceProviderStatus: (id) => {
+        provider.advanceStatus(id);
+      },
+    },
+  };
+}
+
 export function createApplication(options: ApplicationOptions): Application {
   const { config, prisma, logger } = options;
 
@@ -62,11 +97,11 @@ export function createApplication(options: ApplicationOptions): Application {
     };
   }
 
-  const provider = new MockExchangeProvider();
+  const selected = selectExchangeProvider(config);
   const exchanges = new ExchangeService({
     repository: new PrismaExchangeRepository(prisma),
-    provider,
-    providerKind: 'MOCK',
+    provider: selected.provider,
+    providerKind: selected.providerKind,
     logger,
   });
   const users = new UserService(new PrismaUserRepository(prisma));
@@ -76,11 +111,7 @@ export function createApplication(options: ApplicationOptions): Application {
     exchanges,
     users,
     logger,
-    demo: {
-      advanceProviderStatus: (id) => {
-        provider.advanceStatus(id);
-      },
-    },
+    ...(selected.demo ? { demo: selected.demo } : {}),
   });
 
   const notifications = new NotificationService({

@@ -30,6 +30,14 @@ describe('callback data', () => {
       kind: 'rate',
       rateType: 'FIXED',
     });
+    expect(parseCallbackData(callbackData.currencyNext)).toEqual({
+      kind: 'currency_page',
+      direction: 'next',
+    });
+    expect(parseCallbackData(callbackData.currencyPrev)).toEqual({
+      kind: 'currency_page',
+      direction: 'prev',
+    });
     for (const build of [
       callbackData.open,
       callbackData.confirm,
@@ -50,6 +58,7 @@ describe('callback data', () => {
     `c:${UUID}:extra`,
     'f:USDT:TRX',
     'f:usdt',
+    'u:z',
     '__proto__',
     'constructor',
     `z:${UUID}`,

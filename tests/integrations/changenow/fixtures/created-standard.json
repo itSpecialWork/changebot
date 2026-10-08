@@ -1,0 +1,14 @@
+{
+  "fromAmount": 0.003,
+  "toAmount": 0.052286,
+  "flow": "standard",
+  "type": "direct",
+  "payinAddress": "3M7QKsJDKbVZAhFPpFSVtVQv6Nzon3Lwtv",
+  "payoutAddress": "0x57f31ad4b64095347F87eDB1675566DAfF5EC886",
+  "fromCurrency": "btc",
+  "toCurrency": "eth",
+  "refundAddress": "135Hej8p1xSKoChWu5x6LSbNn5opgpojGn",
+  "id": "3a2360771439a3",
+  "fromNetwork": "btc",
+  "toNetwork": "eth"
+}

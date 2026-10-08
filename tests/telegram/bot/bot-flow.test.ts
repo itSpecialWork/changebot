@@ -209,6 +209,23 @@ describe('бот: мои обмены', () => {
   });
 });
 
+describe('бот: поиск валюты', () => {
+  it('на шаге выбора ищет по тикеру и не сбрасывает диалог при пустом результате', async () => {
+    await bot.pressButton(USER, 'm:new');
+    await bot.sendText(USER, 'zzz');
+
+    expect(bot.lastText()).toContain('Ничего не найдено');
+    expect(bot.lastButtons()).toContain('m:menu');
+    expect(bot.lastButtons()).not.toContain('f:btc:btc');
+
+    await bot.sendText(USER, 'btc');
+
+    expect(bot.lastText()).toContain('Совпадения');
+    expect(bot.lastButtons()).toContain('f:btc:btc');
+    expect(bot.lastButtons()).not.toContain('f:eth:eth');
+  });
+});
+
 describe('бот: тестовый режим', () => {
   it('кнопка «следующий статус» двигает обмен через ExchangeService', async () => {
     const confirm = await reachConfirmation();

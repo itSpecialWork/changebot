@@ -1,0 +1,19 @@
+{
+  "id": "81cc9c3a9157a6",
+  "status": "finished",
+  "actionsAvailable": false,
+  "fromCurrency": "bnb",
+  "fromNetwork": "bsc",
+  "toCurrency": "usdt",
+  "toNetwork": "bsc",
+  "expectedAmountFrom": null,
+  "expectedAmountTo": 7.4050889,
+  "amountFrom": 0.013,
+  "amountTo": 7.41109355,
+  "payinAddress": "0x2915767890A6FbF031DCe70E1b80D987Dc3a2922",
+  "payoutAddress": "0x07e35e2fe54d341d526701bdbda7b632f620942d",
+  "payinExtraId": null,
+  "payoutExtraId": null,
+  "refundAddress": null,
+  "refundExtraId": null
+}

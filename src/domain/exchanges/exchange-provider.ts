@@ -27,6 +27,11 @@ export interface ProviderCurrency {
   readonly name: string;
   readonly extraId: ExtraIdRequirement;
   readonly supportsFixedRate: boolean;
+  /**
+   * Популярная валюта. Когда каталог не влезает в кнопки Telegram,
+   * первый экран показывает только такие валюты, остальные ищутся по тикеру.
+   */
+  readonly featured: boolean;
 }
 
 export interface CurrencyPair {

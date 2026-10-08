@@ -34,6 +34,9 @@ export interface NewExchangeFlow {
   /** Сумма в нормализованном виде (десятичная строка). */
   amount?: string;
   payoutAddress?: string;
+  /** Фильтр каталога на шагах выбора валюты. Пустая строка — без поиска. */
+  currencyQuery: string;
+  currencyPage: number;
 }
 
 export interface SessionData {
