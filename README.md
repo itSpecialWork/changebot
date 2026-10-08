@@ -3,9 +3,10 @@
 Некостодиальный сервис обмена криптовалют через ChangeNOW API.
 Подробности и архитектура: [docs/PROJECT.md](docs/PROJECT.md).
 
-**Текущий этап: инфраструктурная основа.** Реализованы только Node.js/TypeScript, Express (`GET /health`),
-PostgreSQL, Prisma (без моделей), Zod-конфигурация, Pino, Vitest. Telegram-бота, ChangeNOW, обменов,
-кошельков и бизнес-логики пока нет.
+**Текущий этап: инфраструктура и доменная модель данных.** Реализованы Node.js/TypeScript, Express
+(`GET /health`), PostgreSQL, Prisma-модели и миграция (`User`, `Exchange`, `ExchangeStatusHistory`,
+`NotificationOutbox`), матрица переходов статусов обмена, Zod-конфигурация, Pino, Vitest.
+Telegram-бота, `ExchangeProvider`, `ExchangeService`, репозиториев, worker, ChangeNOW и кошельков пока нет.
 
 ## Требования
 
@@ -39,7 +40,7 @@ curl -i http://127.0.0.1:3000/health
 | `npm start`               | запуск собранного приложения (`node dist/index.js`)   |
 | `npm run lint`            | ESLint (strict type-checked)                          |
 | `npm run typecheck`       | генерация Prisma Client и `tsc --noEmit`              |
-| `npm test`                | Vitest (без обращения к сети и БД)                    |
+| `npm test`                | Vitest (тесты БД — только при `TEST_DATABASE_URL`)    |
 | `npm run format`          | Prettier (запись)                                     |
 | `npm run format:check`    | Prettier (только проверка)                            |
 | `npm run prisma:validate` | валидация `prisma/schema.prisma`                      |
@@ -60,7 +61,13 @@ curl -i http://127.0.0.1:3000/health
   Полное удаление данных: `docker compose down -v` (необратимо).
 - Prisma 7 использует driver adapter `@prisma/adapter-pg`; клиент генерируется в `src/database/generated`
   (в git не хранится, создаётся командами `build` и `typecheck` либо `npm run prisma:generate`).
-- Модели и миграции пока не созданы.
+- Модели описаны в `prisma/schema.prisma`, миграция `domain_model` — в `prisma/migrations/`.
+  Применение: `npx prisma migrate deploy`.
+- Часть ограничений (CHECK, триггер неизменяемости `exchange_status_history`) лежит в ручном SQL-блоке
+  миграции и не отражена в `schema.prisma`. Не используйте `prisma db pull` и не пересоздавайте миграции
+  без переноса этого блока. Ограничения покрыты тестами `tests/db`.
+- Интеграционные тесты БД: создайте отдельную базу `changenow_test` и задайте `TEST_DATABASE_URL`
+  (см. `.env.example`). Без неё тесты `tests/db` пропускаются.
 
 ## Структура
 
@@ -68,11 +75,12 @@ curl -i http://127.0.0.1:3000/health
 src/
   config/          # Zod-конфигурация окружения
   database/        # Prisma client (generated/ — артефакт генерации)
+  domain/          # чистая доменная логика (статусы обмена и допустимые переходы)
   http/            # Express-приложение, /health, graceful shutdown
   observability/   # Pino-логгер с маскированием чувствительных полей
   index.ts         # точка входа
-tests/             # Vitest
-prisma/            # schema.prisma (без моделей)
+tests/             # Vitest (domain/, db/ — интеграционные тесты схемы)
+prisma/            # schema.prisma и миграции
 docs/              # документация проекта
 ```
 

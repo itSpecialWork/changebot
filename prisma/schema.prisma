@@ -1,5 +1,15 @@
-// Инфраструктурный этап: моделей пока нет.
-// Бизнес-сущности и миграции добавляются в следующих этапах.
+// Доменная модель: пользователи, обмены, история статусов, outbox уведомлений.
+//
+// Соглашения:
+//  - первичные ключи: UUIDv7 (упорядочены по времени);
+//  - даты: timestamptz(3);
+//  - суммы: только Decimal(50, 24), никакого Float;
+//  - внешние ключи: onDelete Restrict (ничего не удаляется каскадом);
+//  - таблицы и колонки в snake_case.
+//
+// ВАЖНО: часть ограничений (CHECK, триггер неизменяемости истории) Prisma не
+// описывает. Они лежат в ручном SQL-блоке миграции `domain_model` и покрыты
+// интеграционными тестами. См. prisma/migrations/*_domain_model/migration.sql.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +18,212 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enum
+// ---------------------------------------------------------------------------
+
+enum ExchangeProvider {
+  MOCK
+  CHANGENOW
+
+  @@map("exchange_provider")
+}
+
+/// Внутренние статусы обмена. Допустимые переходы описаны в
+/// src/domain/exchanges/status-transitions.ts.
+enum ExchangeStatus {
+  DRAFT
+  QUOTED
+  AWAITING_CONFIRMATION
+  CREATING
+  WAITING_DEPOSIT
+  CONFIRMING
+  EXCHANGING
+  SENDING
+  FINISHED
+  FAILED
+  REFUNDED
+  VERIFYING
+  EXPIRED
+
+  @@map("exchange_status")
+}
+
+enum RateType {
+  FIXED
+  FLOATING
+
+  @@map("rate_type")
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+
+  @@map("notification_status")
+}
+
+// ---------------------------------------------------------------------------
+// User
+// ---------------------------------------------------------------------------
+
+model User {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// Telegram ID: отдельное уникальное значение, не используется как первичный ключ.
+  telegramId   BigInt  @unique @map("telegram_id")
+  username     String?
+  firstName    String? @map("first_name")
+  languageCode String? @map("language_code")
+
+  /// Когда Telegram сообщил, что пользователь заблокировал бота.
+  botBlockedAt DateTime? @map("bot_blocked_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  exchanges     Exchange[]
+  notifications NotificationOutbox[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Exchange
+// ---------------------------------------------------------------------------
+
+model Exchange {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  provider           ExchangeProvider
+  /// Идентификатор обмена у провайдера. NULL до успешного createExchange.
+  /// Уникален в пределах провайдера (NULL в unique-индексе не конфликтуют).
+  providerExchangeId String?          @map("provider_exchange_id")
+  /// Ключ идемпотентности. Формирует application-слой, в нём участвует userId.
+  idempotencyKey     String           @unique @map("idempotency_key")
+
+  // Валюта и blockchain network хранятся отдельно (словарь провайдера,
+  // нормализованный нижний регистр). У нативных монет network тоже заполнен.
+  fromCurrency String @map("from_currency")
+  fromNetwork  String @map("from_network")
+  toCurrency   String @map("to_currency")
+  toNetwork    String @map("to_network")
+
+  // Суммы. MVP поддерживает только прямой поток: пользователь задаёт сумму отправки.
+  expectedFromAmount Decimal  @map("expected_from_amount") @db.Decimal(50, 24)
+  expectedToAmount   Decimal? @map("expected_to_amount") @db.Decimal(50, 24)
+  /// Фактически полученный провайдером payin.
+  actualFromAmount   Decimal? @map("actual_from_amount") @db.Decimal(50, 24)
+  /// Фактически отправленный payout.
+  actualToAmount     Decimal? @map("actual_to_amount") @db.Decimal(50, 24)
+
+  // Адреса и memo/tag/extraId. extraId покрывает memo, tag и destination tag.
+  // Строки: ведущие нули и регистр сохраняются. NULL = значения нет; пустая строка запрещена CHECK.
+  payinAddress  String? @map("payin_address")
+  payinExtraId  String? @map("payin_extra_id")
+  payoutAddress String? @map("payout_address")
+  payoutExtraId String? @map("payout_extra_id")
+  refundAddress String? @map("refund_address")
+  refundExtraId String? @map("refund_extra_id")
+
+  // Котировка.
+  rateType       RateType  @map("rate_type")
+  providerRateId String?   @map("provider_rate_id")
+  quoteExpiresAt DateTime? @map("quote_expires_at") @db.Timestamptz(3)
+
+  // Статус.
+  status          ExchangeStatus @default(DRAFT)
+  /// Оригинальный статус провайдера. Строка, а не enum: словарь внешний.
+  providerStatus  String?        @map("provider_status")
+  statusChangedAt DateTime       @default(now()) @map("status_changed_at") @db.Timestamptz(3)
+
+  // Поля фонового worker.
+  // nextCheckAt: когда worker должен обратить внимание на обмен (опрос провайдера,
+  // истечение котировки/черновика, восстановление CREATING). NULL только в
+  // терминальных статусах (инвариант в CHECK). Одновременно служит lease при захвате.
+  nextCheckAt       DateTime? @map("next_check_at") @db.Timestamptz(3)
+  lastCheckedAt     DateTime? @map("last_checked_at") @db.Timestamptz(3)
+  checkFailureCount Int       @default(0) @map("check_failure_count")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user          User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  statusHistory ExchangeStatusHistory[]
+  notifications NotificationOutbox[]
+
+  @@unique([provider, providerExchangeId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@index([status, nextCheckAt])
+  @@map("exchanges")
+}
+
+// ---------------------------------------------------------------------------
+// ExchangeStatusHistory (append-only; UPDATE/DELETE запрещены триггером)
+// ---------------------------------------------------------------------------
+
+model ExchangeStatusHistory {
+  id         String @id @default(uuid(7)) @db.Uuid
+  exchangeId String @map("exchange_id") @db.Uuid
+
+  /// Порядковый номер события внутри обмена, начиная с 1.
+  sequence       Int
+  /// NULL только для первой записи (создание обмена).
+  fromStatus     ExchangeStatus? @map("from_status")
+  toStatus       ExchangeStatus  @map("to_status")
+  /// Сырой статус провайдера на момент перехода.
+  providerStatus String?         @map("provider_status")
+  /// Машинный код причины, например quote_obtained, user_confirmed, creating_timeout.
+  reason         String
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  exchange Exchange @relation(fields: [exchangeId], references: [id], onDelete: Restrict)
+
+  @@unique([exchangeId, sequence])
+  @@map("exchange_status_history")
+}
+
+// ---------------------------------------------------------------------------
+// NotificationOutbox (переживает рестарт приложения)
+// ---------------------------------------------------------------------------
+
+model NotificationOutbox {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  userId     String  @map("user_id") @db.Uuid
+  exchangeId String? @map("exchange_id") @db.Uuid
+
+  /// Тип уведомления, например EXCHANGE_STATUS_CHANGED. Валидируется в приложении (Zod).
+  type      String
+  /// Минимальные параметры шаблона. Секретов и адресов быть не должно.
+  payload   Json
+  /// Защита от дублей, например exchange:{id}:history:{historyId}.
+  dedupeKey String @unique @map("dedupe_key")
+
+  status        NotificationStatus @default(PENDING)
+  attempts      Int                @default(0)
+  nextAttemptAt DateTime           @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  /// Заполнено, пока запись в PROCESSING. Зависшие по TTL возвращаются в PENDING.
+  lockedAt      DateTime?          @map("locked_at") @db.Timestamptz(3)
+  sentAt        DateTime?          @map("sent_at") @db.Timestamptz(3)
+  /// Усечённая и замаскированная причина последней ошибки. Токены сюда не попадают.
+  lastError     String?            @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  exchange Exchange? @relation(fields: [exchangeId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@index([status, lockedAt])
+  @@index([userId])
+  @@index([exchangeId])
+  @@map("notification_outbox")
 }
