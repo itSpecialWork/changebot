@@ -8,6 +8,7 @@
  * `setProviderStatus` задаёт любой статус (в том числе failed, refunded, verifying
  * и неизвестный сырой статус).
  */
+import { randomUUID } from 'node:crypto';
 import {
   compareDecimal,
   formatDecimal,
@@ -284,7 +285,9 @@ export class MockExchangeProvider implements ExchangeProvider {
     }
 
     this.sequence += 1;
-    const id = `mock-exchange-${String(this.sequence)}`;
+    // Идентификатор уникален и между перезапусками процесса: в БД действует
+    // unique (provider, providerExchangeId), а состояние мока живёт только в памяти.
+    const id = `mock-exchange-${randomUUID()}`;
     const fromCurrency = this.findCurrency(request.fromCurrency, request.fromNetwork);
     const expectedFromAmount = formatDecimal(parseDecimal(request.fromAmount));
     const stored: StoredExchange = {

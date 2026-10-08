@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ExchangeProvider as PrismaProvider,
   ExchangeStatus as PrismaExchangeStatus,
   RateType as PrismaRateType,
 } from '../../src/database/generated/enums.js';
+import { EXCHANGE_PROVIDER_KINDS } from '../../src/domain/exchanges/exchange.js';
 import {
   PROVIDER_EXCHANGE_STATUSES,
   RATE_TYPES,
@@ -15,6 +17,12 @@ import {
 describe('ExchangeStatus: домен и Prisma enum', () => {
   it('списки статусов совпадают', () => {
     expect([...EXCHANGE_STATUSES].sort()).toEqual(Object.values(PrismaExchangeStatus).sort());
+  });
+});
+
+describe('ExchangeProvider: домен и Prisma enum', () => {
+  it('списки провайдеров совпадают', () => {
+    expect([...EXCHANGE_PROVIDER_KINDS].sort()).toEqual(Object.values(PrismaProvider).sort());
   });
 });
 

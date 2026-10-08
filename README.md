@@ -6,8 +6,10 @@
 **Текущий этап: инфраструктура и доменная модель данных.** Реализованы Node.js/TypeScript, Express
 (`GET /health`), PostgreSQL, Prisma-модели и миграция (`User`, `Exchange`, `ExchangeStatusHistory`,
 `NotificationOutbox`), матрица переходов статусов обмена, интерфейс `ExchangeProvider` и
-`MockExchangeProvider`, Zod-конфигурация, Pino, Vitest.
-Telegram-бота, `ExchangeService`, репозиториев, worker, реального клиента ChangeNOW и кошельков пока нет.
+`MockExchangeProvider`, `ExchangeService` с Prisma-репозиторием (compare-and-set переходы с историей,
+идемпотентное создание, сверка статуса с провайдером), Zod-конфигурация, Pino, Vitest.
+Telegram-бота, worker, outbox-sender, реального клиента ChangeNOW и кошельков пока нет;
+сервис пока не подключён к `src/index.ts`.
 
 ## Требования
 
@@ -74,8 +76,9 @@ curl -i http://127.0.0.1:3000/health
 
 ```
 src/
+  application/     # сценарии: ExchangeService (единственное место смены статусов), порт репозитория
   config/          # Zod-конфигурация окружения
-  database/        # Prisma client (generated/ — артефакт генерации)
+  database/        # Prisma client (generated/ — артефакт генерации), repositories/
   domain/          # чистая доменная логика: статусы обмена и переходы, порт ExchangeProvider,
                    # арифметика десятичных сумм (строки, без Float)
   integrations/    # адаптеры внешних провайдеров (пока только MockExchangeProvider в памяти)

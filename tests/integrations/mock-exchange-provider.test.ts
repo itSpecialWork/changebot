@@ -143,7 +143,7 @@ describe('MockExchangeProvider', () => {
     it('создаёт floating-обмен в статусе waiting', async () => {
       const exchange = await provider.createExchange(exchangeRequest());
       expect(exchange).toMatchObject({
-        providerExchangeId: 'mock-exchange-1',
+        providerExchangeId: expect.stringMatching(/^mock-exchange-/) as string,
         providerStatus: 'waiting',
         expectedFromAmount: '100',
         expectedToAmount: '0.0016',
@@ -236,6 +236,12 @@ describe('MockExchangeProvider', () => {
         }),
       );
       expect(exchange.payinExtraId).toMatch(/^mock-payin-memo-/);
+    });
+
+    it('идентификаторы уникальны и между экземплярами (перезапусками процесса)', async () => {
+      const first = await new MockExchangeProvider().createExchange(exchangeRequest());
+      const second = await new MockExchangeProvider().createExchange(exchangeRequest());
+      expect(second.providerExchangeId).not.toBe(first.providerExchangeId);
     });
 
     it('даёт разным обменам разные идентификаторы и адреса', async () => {
