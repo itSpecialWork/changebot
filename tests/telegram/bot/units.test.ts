@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { callbackData, parseCallbackData } from '../../src/bot/callback-data.js';
-import type { BotContext } from '../../src/bot/context.js';
-import type { ExchangeRecord } from '../../src/domain/exchanges/exchange.js';
-import { describeErrorForLog } from '../../src/bot/create-bot.js';
-import { escapeHtml, renderExchangeCard } from '../../src/bot/format.js';
-import { parseAddressInput, parseAmountInput, parseExtraIdInput } from '../../src/bot/input.js';
-import { createRateLimiter } from '../../src/bot/rate-limit.js';
+import { callbackData, parseCallbackData } from '../../../src/telegram/bot/callback-data.js';
+import type { BotContext } from '../../../src/telegram/bot/context.js';
+import type { ExchangeRecord } from '../../../src/domain/exchanges/exchange.js';
+import { describeErrorForLog } from '../../../src/telegram/bot/create-bot.js';
+import { escapeHtml, renderExchangeCard } from '../../../src/telegram/bot/format.js';
+import {
+  parseAddressInput,
+  parseAmountInput,
+  parseExtraIdInput,
+} from '../../../src/telegram/bot/input.js';
+import { createRateLimiter } from '../../../src/telegram/bot/rate-limit.js';
 import { GrammyError } from 'grammy';
 
 const UUID = '0198a2c4-7b1e-7c3a-9d2f-3b5a6c7d8e9f';

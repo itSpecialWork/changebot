@@ -10,7 +10,7 @@ import {
   ExchangeProviderError,
   type ProviderCurrency,
   type RateType,
-} from '../../domain/exchanges/exchange-provider.js';
+} from '../../../domain/exchanges/exchange-provider.js';
 import type { BotContext, BotDependencies, CurrencyChoice, NewExchangeFlow } from '../context.js';
 import { describeFailure } from '../error-text.js';
 import { escapeHtml, formatCurrency, payoutPrompt, renderExchangeCard } from '../format.js';

@@ -12,7 +12,7 @@ import { ExchangeService } from '../../src/application/exchanges/exchange-servic
 import { ExchangeProviderError } from '../../src/domain/exchanges/exchange-provider.js';
 import { MockExchangeProvider } from '../../src/integrations/mock/mock-exchange-provider.js';
 import { createLogger } from '../../src/observability/logger.js';
-import { InMemoryExchangeRepository } from '../bot/harness.js';
+import { InMemoryExchangeRepository } from '../telegram/bot/harness.js';
 
 const logger = createLogger({ nodeEnv: 'test', logLevel: 'silent' });
 const PAIR = {

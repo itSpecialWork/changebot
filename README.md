@@ -17,7 +17,8 @@
 (реальных обменов нет). Меню, мастер «новый обмен» (валюты → тип курса → сумма → адрес → memo →
 подтверждение), карточки обменов, отмена, кнопка «⏩ Демо: следующий статус» для прохождения всего
 жизненного цикла, уведомления через outbox. Адаптер `NotificationSender` на grammY переводит ошибки
-Telegram (403 / 429 / 400) в `NotificationSendError`. Сервисы и worker'ы подключены в `src/compose.ts`.
+Telegram (403 / 429 / 400) в `NotificationSendError`. Весь Telegram-код живёт в `src/telegram/`.
+Сервисы и worker'ы подключены в `src/compose.ts`.
 Реального клиента ChangeNOW и кошельков пока нет; обработка истечения черновиков/котировок и
 восстановление `CREATING` worker'ом не реализованы.
 
@@ -102,14 +103,14 @@ src/
   database/        # Prisma client (generated/ — артефакт генерации), repositories/
   domain/          # чистая доменная логика: статусы обмена и переходы, порт ExchangeProvider,
                    # арифметика десятичных сумм (строки, без Float)
-  bot/             # Telegram-интерфейс (grammY): меню, диалог обмена, карточки; без бизнес-логики
-  integrations/    # адаптеры: MockExchangeProvider (в памяти), grammY-адаптер NotificationSender
+  telegram/        # весь Telegram: bot/ (интерфейс grammY) и notifications/ (отправка из outbox)
+  integrations/    # внешние провайдеры обмена (пока MockExchangeProvider в памяти)
   compose.ts       # composition root: сервисы, worker'ы и бот
   http/            # Express-приложение, /health, graceful shutdown
   workers/         # фоновые циклы (ExchangeStatusWorker): только расписание, логика в application
   observability/   # Pino-логгер с маскированием чувствительных полей
   index.ts         # точка входа
-tests/             # Vitest (domain/, db/ — интеграционные тесты схемы)
+tests/             # Vitest (domain/, telegram/, db/ — интеграционные тесты схемы)
 prisma/            # schema.prisma и миграции
 docs/              # документация проекта
 ```

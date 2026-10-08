@@ -3,7 +3,7 @@
  * формат короткий: `<тип>:<параметры>`. Любые данные от клиента считаются недоверенными:
  * разбор строгий, всё нераспознанное превращается в undefined.
  */
-import type { RateType } from '../domain/exchanges/exchange-provider.js';
+import type { RateType } from '../../domain/exchanges/exchange-provider.js';
 
 export type CallbackAction =
   | { readonly kind: 'menu' }

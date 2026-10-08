@@ -2,8 +2,8 @@
  * Тексты сообщений бота (HTML parse mode). Все значения, пришедшие извне
  * (адреса, memo, тикеры), экранируются.
  */
-import type { ExchangeRecord } from '../domain/exchanges/exchange.js';
-import type { ExchangeStatus } from '../domain/exchanges/status-transitions.js';
+import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
+import type { ExchangeStatus } from '../../domain/exchanges/status-transitions.js';
 
 export function escapeHtml(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');

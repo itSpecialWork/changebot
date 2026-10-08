@@ -6,7 +6,7 @@
  * Обработчики тонкие: вся бизнес-логика находится в application-сервисах.
  */
 import { Bot, GrammyError, HttpError, MemorySessionStorage, session } from 'grammy';
-import { sanitizeErrorForStorage } from '../application/notifications/sanitize-error.js';
+import { sanitizeErrorForStorage } from '../../application/notifications/sanitize-error.js';
 import { parseCallbackData, type CallbackAction } from './callback-data.js';
 import type { BotContext, BotDependencies, SessionData } from './context.js';
 import { describeFailure } from './error-text.js';

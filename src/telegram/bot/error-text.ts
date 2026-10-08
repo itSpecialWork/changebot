@@ -9,11 +9,11 @@ import {
   IdempotencyKeyReuseError,
   InvalidExchangeInputError,
   QuoteExpiredError,
-} from '../application/exchanges/errors.js';
+} from '../../application/exchanges/errors.js';
 import {
   ExchangeProviderError,
   type ExchangeProviderErrorCode,
-} from '../domain/exchanges/exchange-provider.js';
+} from '../../domain/exchanges/exchange-provider.js';
 
 const PROVIDER_MESSAGES: Readonly<Record<ExchangeProviderErrorCode, string>> = {
   UNAVAILABLE: 'Сервис обмена временно недоступен. Попробуйте ещё раз через минуту.',

@@ -1,10 +1,10 @@
 import { GrammyError, HttpError } from 'grammy';
 import { describe, expect, it, vi } from 'vitest';
-import { NotificationSendError } from '../../src/application/notifications/notification-sender.js';
+import { NotificationSendError } from '../../../src/application/notifications/notification-sender.js';
 import {
   mapTelegramError,
   TelegramNotificationSender,
-} from '../../src/integrations/telegram/telegram-notification-sender.js';
+} from '../../../src/telegram/notifications/telegram-notification-sender.js';
 
 const TOKEN = '1234567890:AAExampleTokenForTestsOnly_0123456789abc';
 

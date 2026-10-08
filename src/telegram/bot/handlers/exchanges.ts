@@ -5,9 +5,9 @@
 import {
   ExchangeNotSyncableError,
   ExchangeStatusConflictError,
-} from '../../application/exchanges/errors.js';
-import { ExchangeProviderError } from '../../domain/exchanges/exchange-provider.js';
-import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
+} from '../../../application/exchanges/errors.js';
+import { ExchangeProviderError } from '../../../domain/exchanges/exchange-provider.js';
+import type { ExchangeRecord } from '../../../domain/exchanges/exchange.js';
 import type { BotContext, BotDependencies } from '../context.js';
 import { describeFailure } from '../error-text.js';
 import { escapeHtml, renderExchangeCard } from '../format.js';

@@ -43,7 +43,6 @@ Redis на первом этапе не используется.
 Предполагаемая структура:
 
 src/
-bot/
 application/
 exchanges/
 users/
@@ -52,6 +51,9 @@ domain/
 exchanges/
 users/
 shared/
+telegram/
+bot/
+notifications/
 integrations/
 changenow/
 database/

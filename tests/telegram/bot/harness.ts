@@ -4,7 +4,7 @@
  */
 import type { Bot } from 'grammy';
 import type { Update } from 'grammy/types';
-import { ExchangeStatusConflictError } from '../../src/application/exchanges/errors.js';
+import { ExchangeStatusConflictError } from '../../../src/application/exchanges/errors.js';
 import type {
   CheckFailureParams,
   CheckSuccessParams,
@@ -12,16 +12,16 @@ import type {
   ExchangeRepository,
   NewDraft,
   TransitionParams,
-} from '../../src/application/exchanges/exchange-repository.js';
-import { ExchangeService } from '../../src/application/exchanges/exchange-service.js';
-import type { UserRepository } from '../../src/application/users/user-repository.js';
-import { UserService } from '../../src/application/users/user-service.js';
-import type { BotContext } from '../../src/bot/context.js';
-import { createBot } from '../../src/bot/create-bot.js';
-import type { ExchangeRecord } from '../../src/domain/exchanges/exchange.js';
-import type { TelegramProfile, UserRecord } from '../../src/domain/users/user.js';
-import { MockExchangeProvider } from '../../src/integrations/mock/mock-exchange-provider.js';
-import { createLogger } from '../../src/observability/logger.js';
+} from '../../../src/application/exchanges/exchange-repository.js';
+import { ExchangeService } from '../../../src/application/exchanges/exchange-service.js';
+import type { UserRepository } from '../../../src/application/users/user-repository.js';
+import { UserService } from '../../../src/application/users/user-service.js';
+import type { BotContext } from '../../../src/telegram/bot/context.js';
+import { createBot } from '../../../src/telegram/bot/create-bot.js';
+import type { ExchangeRecord } from '../../../src/domain/exchanges/exchange.js';
+import type { TelegramProfile, UserRecord } from '../../../src/domain/users/user.js';
+import { MockExchangeProvider } from '../../../src/integrations/mock/mock-exchange-provider.js';
+import { createLogger } from '../../../src/observability/logger.js';
 
 export class InMemoryExchangeRepository implements ExchangeRepository {
   readonly rows = new Map<string, ExchangeRecord>();

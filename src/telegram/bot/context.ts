@@ -5,11 +5,11 @@
  * он не знает: бизнес-логика живёт в ExchangeService и UserService.
  */
 import type { Context, SessionFlavor } from 'grammy';
-import type { ExchangeService } from '../application/exchanges/exchange-service.js';
-import type { UserService } from '../application/users/user-service.js';
-import type { ExtraIdRequirement, RateType } from '../domain/exchanges/exchange-provider.js';
-import type { UserRecord } from '../domain/users/user.js';
-import type { Logger } from '../observability/logger.js';
+import type { ExchangeService } from '../../application/exchanges/exchange-service.js';
+import type { UserService } from '../../application/users/user-service.js';
+import type { ExtraIdRequirement, RateType } from '../../domain/exchanges/exchange-provider.js';
+import type { UserRecord } from '../../domain/users/user.js';
+import type { Logger } from '../../observability/logger.js';
 
 export interface CurrencyChoice {
   readonly ticker: string;

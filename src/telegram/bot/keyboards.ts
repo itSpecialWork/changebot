@@ -1,7 +1,7 @@
 import { InlineKeyboard } from 'grammy';
-import type { ExchangeRecord } from '../domain/exchanges/exchange.js';
-import type { ProviderCurrency } from '../domain/exchanges/exchange-provider.js';
-import { isTerminalStatus } from '../domain/exchanges/status-transitions.js';
+import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
+import type { ProviderCurrency } from '../../domain/exchanges/exchange-provider.js';
+import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
 import { formatListButton } from './format.js';
 
