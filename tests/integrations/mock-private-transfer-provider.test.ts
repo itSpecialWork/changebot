@@ -81,6 +81,7 @@ describe('MockPrivateTransferProvider', () => {
     expect(created.payinAddress).toBe('mock-payin-address-2');
     expect(created.payoutAddress).toBe('test-recipient');
     expect(created.payinExtraId).toBeNull();
+    expect(created.providerStatus).toBe('waiting');
 
     await expectProviderError(provider.create(transferRequest('missing-rate')), 'INVALID_REQUEST');
     await expectProviderError(

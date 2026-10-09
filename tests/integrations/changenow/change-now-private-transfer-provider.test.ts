@@ -154,6 +154,7 @@ describe('ChangeNowPrivateTransferProvider', () => {
       payoutAddress: RECIPIENT,
       payinExtraId: null,
       payoutExtraId: null,
+      providerStatus: 'new',
     });
   });
 

@@ -24,6 +24,7 @@ import {
 import type { PrismaClient } from '../../src/database/prisma.js';
 import { PrismaExchangeRepository } from '../../src/database/repositories/prisma-exchange-repository.js';
 import { MockExchangeProvider } from '../../src/integrations/mock/mock-exchange-provider.js';
+import { MockPrivateTransferProvider } from '../../src/integrations/mock/mock-private-transfer-provider.js';
 import { createLogger } from '../../src/observability/logger.js';
 import { createTestUser, setupTestDatabase, testDatabaseUrl } from './test-database.js';
 
@@ -513,6 +514,54 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
       await expect(service.syncWithProvider(exchange.id)).rejects.toThrow(ExchangeNotSyncableError);
 
       await expect(service.syncWithProvider(randomUUID())).rejects.toThrow(ExchangeNotFoundError);
+    });
+  });
+
+  describe('private transfer', () => {
+    it('сохраняет providerStatus и проходит проверку WAITING_DEPOSIT', async () => {
+      const user = await createTestUser(prisma);
+      const privateService = new ExchangeService({
+        repository: new PrismaExchangeRepository(prisma),
+        provider,
+        providerKind: 'MOCK',
+        privateTransfer: new MockPrivateTransferProvider({ now: () => now }),
+        logger: createLogger({ nodeEnv: 'test', logLevel: 'silent' }),
+        now: () => now,
+      });
+
+      const draft = await privateService.createDraft({
+        userId: user.id,
+        clientRequestId: randomUUID(),
+        fromCurrency: 'usdt',
+        fromNetwork: 'trx',
+        toCurrency: 'usdt',
+        toNetwork: 'trx',
+        fromAmount: '1',
+        toAmount: '100',
+        rateType: 'FLOATING',
+        payoutAddress: 'test-payout-address',
+      });
+      await privateService.requestQuote(user.id, draft.id);
+      await privateService.requestConfirmation(user.id, draft.id);
+      const waiting = await privateService.confirmAndCreate(user.id, draft.id);
+
+      expect(waiting).toMatchObject({
+        status: 'WAITING_DEPOSIT',
+        providerStatus: 'waiting',
+        fromCurrency: 'usdt',
+        fromNetwork: 'trx',
+        toCurrency: 'usdt',
+        toNetwork: 'trx',
+        expectedFromAmount: '101',
+        expectedToAmount: '100',
+      });
+      expect(waiting.providerExchangeId).toMatch(/^mock-transfer-/);
+      expect(waiting.payinAddress).toMatch(/^mock-payin-address-/);
+
+      const stored = await prisma.exchange.findUniqueOrThrow({ where: { id: draft.id } });
+      expect(stored.status).toBe('WAITING_DEPOSIT');
+      expect(stored.providerStatus).toBe('waiting');
+      expect(stored.payinAddress).toBe(waiting.payinAddress);
     });
   });
 });

@@ -56,6 +56,8 @@ export interface PrivateTransfer {
   readonly payoutAddress: string;
   readonly payinExtraId: string | null;
   readonly payoutExtraId: string | null;
+  /** Сырой статус провайдера в момент создания. Без него WAITING_DEPOSIT не сохраняется. */
+  readonly providerStatus: string;
 }
 
 export interface PrivateTransferProvider {

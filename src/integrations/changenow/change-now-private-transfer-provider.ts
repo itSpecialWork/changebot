@@ -136,6 +136,8 @@ export class ChangeNowPrivateTransferProvider implements PrivateTransferProvider
       payoutAddress: parsed.data.payoutAddress,
       payinExtraId: emptyToNull(parsed.data.payinExtraId),
       payoutExtraId: emptyToNull(parsed.data.payoutExtraId),
+      // Ответ создания статуса не содержит. new — тот же начальный статус, что у обмена.
+      providerStatus: 'new',
     };
   }
 

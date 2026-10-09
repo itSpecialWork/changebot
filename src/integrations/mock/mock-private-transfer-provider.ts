@@ -203,6 +203,7 @@ export class MockPrivateTransferProvider implements PrivateTransferProvider {
       payoutAddress: stored.payoutAddress,
       payinExtraId: stored.payinExtraId,
       payoutExtraId: stored.payoutExtraId,
+      providerStatus: stored.providerStatus,
     };
   }
 

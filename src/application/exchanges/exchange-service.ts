@@ -203,7 +203,7 @@ interface CreatedLeg {
   readonly providerExchangeId: string;
   readonly payinAddress: string;
   readonly payinExtraId: string | null;
-  readonly providerStatus?: string;
+  readonly providerStatus: string;
   readonly expectedFromAmount: string;
   readonly expectedToAmount: string;
 }
@@ -489,11 +489,9 @@ export class ExchangeService {
           providerExchangeId: created.providerExchangeId,
           payinAddress: created.payinAddress,
           payinExtraId: created.payinExtraId,
+          providerStatus: created.providerStatus,
           expectedFromAmount: created.expectedFromAmount,
           expectedToAmount: created.expectedToAmount,
-          ...(created.providerStatus !== undefined
-            ? { providerStatus: created.providerStatus }
-            : {}),
         },
       });
     } catch (error) {
@@ -732,6 +730,7 @@ export class ExchangeService {
       providerExchangeId: created.providerTransferId,
       payinAddress: created.payinAddress,
       payinExtraId: created.payinExtraId,
+      providerStatus: created.providerStatus,
       expectedFromAmount: created.fromAmount,
       expectedToAmount: created.toAmount,
     };

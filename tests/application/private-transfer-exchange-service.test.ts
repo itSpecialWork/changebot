@@ -148,6 +148,7 @@ describe('та же монета', () => {
 
     const created = await service.confirmAndCreate('u1', draft.id);
     expect(created.status).toBe('WAITING_DEPOSIT');
+    expect(created.providerStatus).toBe('waiting');
     expect(created.payinAddress).toMatch(/^mock-payin-address-/);
     expect(created.expectedToAmount).toBe('100');
     expect(transfer.createCalls).toBe(1);
