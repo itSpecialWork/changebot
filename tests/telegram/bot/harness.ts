@@ -19,8 +19,11 @@ import { UserService } from '../../../src/application/users/user-service.js';
 import type { BotContext } from '../../../src/telegram/bot/context.js';
 import { createBot } from '../../../src/telegram/bot/create-bot.js';
 import type { ExchangeRecord } from '../../../src/domain/exchanges/exchange.js';
+import { ExchangeProviderError } from '../../../src/domain/exchanges/exchange-provider.js';
+import type { PrivateTransferProvider } from '../../../src/domain/exchanges/private-transfer-provider.js';
 import type { TelegramProfile, UserRecord } from '../../../src/domain/users/user.js';
 import { MockExchangeProvider } from '../../../src/integrations/mock/mock-exchange-provider.js';
+import { MockPrivateTransferProvider } from '../../../src/integrations/mock/mock-private-transfer-provider.js';
 import { createLogger } from '../../../src/observability/logger.js';
 
 export class InMemoryExchangeRepository implements ExchangeRepository {
@@ -44,7 +47,7 @@ export class InMemoryExchangeRepository implements ExchangeRepository {
       toCurrency: draft.toCurrency,
       toNetwork: draft.toNetwork,
       expectedFromAmount: draft.expectedFromAmount,
-      expectedToAmount: null,
+      expectedToAmount: draft.expectedToAmount ?? null,
       actualFromAmount: null,
       actualToAmount: null,
       payinAddress: null,
@@ -146,23 +149,31 @@ export interface ApiCall {
 
 const BOT_INFO = { id: 1, is_bot: true, first_name: 'Test', username: 'test_bot' };
 
+export interface BotHarnessOptions {
+  readonly privateTransfer?: PrivateTransferProvider;
+}
+
 export class BotHarness {
   readonly exchangeRepository = new InMemoryExchangeRepository();
   readonly userRepository = new InMemoryUserRepository();
   readonly provider = new MockExchangeProvider();
+  readonly privateTransfer: PrivateTransferProvider | undefined;
   readonly calls: ApiCall[] = [];
   readonly bot: Bot<BotContext>;
   readonly exchanges: ExchangeService;
   private updateId = 0;
 
-  private constructor() {
+  private constructor(options: BotHarnessOptions = {}) {
     const logger = createLogger({ nodeEnv: 'test', logLevel: 'silent' });
+    this.privateTransfer = options.privateTransfer;
     this.exchanges = new ExchangeService({
       repository: this.exchangeRepository,
       provider: this.provider,
       providerKind: 'MOCK',
       logger,
+      ...(this.privateTransfer ? { privateTransfer: this.privateTransfer } : {}),
     });
+    const transfer = this.privateTransfer;
     this.bot = createBot({
       token: '123456:TEST_TOKEN_FOR_UNIT_TESTS_ONLY_0000000',
       exchanges: this.exchanges,
@@ -170,7 +181,19 @@ export class BotHarness {
       logger,
       demo: {
         advanceProviderStatus: (id) => {
-          this.provider.advanceStatus(id);
+          try {
+            this.provider.advanceStatus(id);
+          } catch (error) {
+            if (
+              transfer instanceof MockPrivateTransferProvider &&
+              error instanceof ExchangeProviderError &&
+              error.code === 'NOT_FOUND'
+            ) {
+              transfer.advanceStatus(id);
+              return;
+            }
+            throw error;
+          }
         },
       },
       rateLimit: { limit: 10_000, windowMs: 1000 },
@@ -189,8 +212,8 @@ export class BotHarness {
     });
   }
 
-  static async create(): Promise<BotHarness> {
-    const harness = new BotHarness();
+  static async create(options: BotHarnessOptions = {}): Promise<BotHarness> {
+    const harness = new BotHarness(options);
     await harness.bot.init();
     return harness;
   }

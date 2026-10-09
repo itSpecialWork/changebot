@@ -17,6 +17,13 @@ const telegramTokenSchema = z
 const emptyToUndefined = (value: unknown): unknown =>
   typeof value === 'string' && value.trim() === '' ? undefined : value;
 
+/** Пустое значение и отсутствие равны `false`. Другие строки — ошибка конфигурации. */
+const featureFlagSchema = z.preprocess(
+  (value) =>
+    value === undefined || (typeof value === 'string' && value.trim() === '') ? 'false' : value,
+  z.enum(['true', 'false'], { error: 'must be true or false' }),
+);
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().trim().min(1).default('127.0.0.1'),
@@ -30,13 +37,14 @@ const envSchema = z.object({
    * Живой ChangeNOW выключен, пока флаг не равен строке `true`.
    * Сообщение об ошибке не включает переданное значение.
    */
-  CHANGENOW_ENABLED: z.preprocess(
-    (value) =>
-      value === undefined || (typeof value === 'string' && value.trim() === '') ? 'false' : value,
-    z.enum(['true', 'false'], { error: 'must be true or false' }),
-  ),
+  CHANGENOW_ENABLED: featureFlagSchema,
   // Пустое значение равносильно отсутствию ключа. Сам ключ в ошибку не попадает.
   CHANGENOW_API_KEY: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  /**
+   * Private Transfer выключен, пока флаг не равен строке `true`.
+   * Ключ тот же, что у обмена. Без флага сценарий не вызывается.
+   */
+  PRIVATE_TRANSFER_ENABLED: featureFlagSchema,
 });
 
 export interface AppConfig {
@@ -51,10 +59,16 @@ export interface AppConfig {
   /** true — ChangeNOW API v2. false — тестовый провайдер в памяти. */
   readonly changeNowEnabled: boolean;
   /**
-   * Ключ ChangeNOW. Заполнен только при включённом флаге.
+   * Ключ ChangeNOW. Заполнен только при включённом флаге обмена.
    * При выключенном флаге отбрасывается, чтобы не лежать в объекте конфигурации.
+   * Private Transfer использует этот же ключ и отдельного не имеет.
    */
   readonly changeNowApiKey: string | undefined;
+  /**
+   * true — selectPrivateTransferProvider создаёт мок или HTTP-адаптер.
+   * false — провайдер перевода не создаётся, бот сценарий не вызывает.
+   */
+  readonly privateTransferEnabled: boolean;
 }
 
 /**
@@ -79,6 +93,7 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
 
   const env = result.data;
   const changeNowEnabled = env.CHANGENOW_ENABLED === 'true';
+  const privateTransferEnabled = env.PRIVATE_TRANSFER_ENABLED === 'true';
   if (changeNowEnabled && env.CHANGENOW_API_KEY === undefined) {
     throw new ConfigError(['CHANGENOW_API_KEY: is required when CHANGENOW_ENABLED is true']);
   }
@@ -93,5 +108,6 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
     changeNowEnabled,
     changeNowApiKey: changeNowEnabled ? env.CHANGENOW_API_KEY : undefined,
+    privateTransferEnabled,
   });
 }

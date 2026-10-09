@@ -2,6 +2,9 @@
  * Диалог «новый обмен»: валюта отправки → валюта получения → тип курса → сумма →
  * адрес (→ memo) → черновик и котировка → подтверждение.
  *
+ * Та же монета и та же сеть пропускают тип курса: это перевод без конвертации,
+ * пользователь вводит сумму получения. Другая сеть идёт обычным обменом.
+ *
  * Обработчики собирают ввод и вызывают ExchangeService; проверки пары, суммы и сети
  * выполняет сервис и провайдер. Состояние диалога живёт в сессии (память процесса).
  */
@@ -51,6 +54,15 @@ function sameCurrency(a: CurrencyChoice, b: CurrencyChoice): boolean {
 }
 
 const MAX_CURRENCY_QUERY = 32;
+
+function receiveAmountPrompt(currencyLabel: string): string {
+  const labelHtml = escapeHtml(currencyLabel);
+  return [
+    `Перевод без конвертации: <b>${labelHtml}</b> → <b>${labelHtml}</b>.`,
+    `Введите сумму, которую должен получить адресат, в <b>${labelHtml}</b>.`,
+    'Мы посчитаем, сколько нужно отправить.',
+  ].join('\n');
+}
 
 function amountPrompt(currencyLabel: string, range: ProviderAmountRange | undefined): string {
   const lines = [`Введите сумму, которую хотите отдать, в <b>${escapeHtml(currencyLabel)}</b>.`];
@@ -138,6 +150,18 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     await show(ctx, 'Эта кнопка устарела. Начните заново.', mainMenuKeyboard());
   }
 
+  /** Ошибка котировки: недоступная пара сбрасывает диалог, сумма и сбой оставляют шаг. */
+  async function reportQuoteFailure(ctx: BotContext, error: unknown): Promise<void> {
+    if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
+      ctx.session.flow = undefined;
+      await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
+      return;
+    }
+    const message = describeFailure(error);
+    if (message === undefined) throw error;
+    await reply(ctx, `${escapeHtml(message)}\nОтправьте сумму ещё раз.`, cancelFlowKeyboard());
+  }
+
   async function findCurrency(
     ticker: string,
     network: string,
@@ -151,14 +175,14 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       await staleButton(ctx);
       return;
     }
-    const all = await deps.exchanges.listCurrencies();
     const from = flow.from;
     const currencies =
       flow.step === 'to' && from
-        ? all.filter(
-            (currency) => !(currency.ticker === from.ticker && currency.network === from.network),
-          )
-        : all;
+        ? await deps.exchanges.listDestinationCurrencies({
+            ticker: from.ticker,
+            network: from.network,
+          })
+        : await deps.exchanges.listCurrencies();
     let selection = selectCurrencies(currencies, {
       query: flow.currencyQuery,
       page: flow.currencyPage,
@@ -193,14 +217,18 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     }
 
     // flow.id — ключ идемпотентности: повторная отправка того же сообщения не создаст дубль.
-    const draft = await deps.exchanges.createDraft({
-      userId: ctx.appUser.id,
-      clientRequestId: flow.id,
+    const pair = {
       fromCurrency: from.ticker,
       fromNetwork: from.network,
       toCurrency: to.ticker,
       toNetwork: to.network,
+    };
+    const draft = await deps.exchanges.createDraft({
+      userId: ctx.appUser.id,
+      clientRequestId: flow.id,
+      ...pair,
       fromAmount: amount,
+      ...(deps.exchanges.isPrivateTransferSelection(pair) ? { toAmount: amount } : {}),
       rateType,
       payoutAddress,
       payoutExtraId: extraId,
@@ -243,6 +271,37 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       return;
     }
 
+    const pair = {
+      fromCurrency: from.ticker,
+      fromNetwork: from.network,
+      toCurrency: to.ticker,
+      toNetwork: to.network,
+    };
+    if (deps.exchanges.isPrivateTransferSelection(pair)) {
+      try {
+        const estimate = await deps.exchanges.previewPrivateTransfer({
+          currency: from.ticker,
+          network: from.network,
+          toAmount: amount,
+        });
+        flow.amount = estimate.toAmount;
+        flow.step = 'address';
+        await reply(
+          ctx,
+          [
+            `Адресат получит <b>${escapeHtml(estimate.toAmount)} ${escapeHtml(label(to))}</b>.`,
+            `К отправке: <b>${escapeHtml(estimate.fromAmount)} ${escapeHtml(label(from))}</b>.`,
+            '',
+            payoutPrompt(label(to), demo),
+          ].join('\n'),
+          cancelFlowKeyboard(),
+        );
+      } catch (error) {
+        await reportQuoteFailure(ctx, error);
+      }
+      return;
+    }
+
     let toAmount: string;
     let normalized: string;
     try {
@@ -257,15 +316,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       toAmount = quote.toAmount;
       normalized = quote.fromAmount;
     } catch (error) {
-      if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
-        ctx.session.flow = undefined;
-        await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
-        return;
-      }
-      // Неверная сумма, выход за лимиты или временный сбой: остаёмся на шаге суммы.
-      const message = describeFailure(error);
-      if (message === undefined) throw error;
-      await reply(ctx, `${escapeHtml(message)}\nОтправьте сумму ещё раз.`, cancelFlowKeyboard());
+      await reportQuoteFailure(ctx, error);
       return;
     }
 
@@ -393,11 +444,30 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     async selectTo(ctx: BotContext, ticker: string, network: string): Promise<void> {
       const flow = ctx.session.flow;
       const currency = flow?.step === 'to' ? await findCurrency(ticker, network) : undefined;
-      if (!flow?.from || !currency || sameCurrency(flow.from, toChoice(currency))) {
+      if (!flow?.from || !currency) {
         await staleButton(ctx);
         return;
       }
-      flow.to = toChoice(currency);
+      const to = toChoice(currency);
+      const pair = {
+        fromCurrency: flow.from.ticker,
+        fromNetwork: flow.from.network,
+        toCurrency: to.ticker,
+        toNetwork: to.network,
+      };
+      if (deps.exchanges.isPrivateTransferSelection(pair)) {
+        flow.to = to;
+        flow.rateType = 'FIXED';
+        flow.step = 'amount';
+        delete flow.amountRange;
+        await show(ctx, receiveAmountPrompt(label(to)), cancelFlowKeyboard());
+        return;
+      }
+      if (sameCurrency(flow.from, to)) {
+        await staleButton(ctx);
+        return;
+      }
+      flow.to = to;
       flow.step = 'rate';
       await show(
         ctx,

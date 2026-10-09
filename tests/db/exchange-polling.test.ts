@@ -74,6 +74,7 @@ describe.skipIf(!testDatabaseUrl)('опрос обменов', () => {
       now: at,
       limit: 1000,
       statuses: WAITING,
+      provider: 'MOCK',
       leaseUntil: new Date(at.getTime() + leaseMs),
     });
 
@@ -102,6 +103,7 @@ describe.skipIf(!testDatabaseUrl)('опрос обменов', () => {
         now: at(60 * SECOND),
         limit: 1000,
         statuses: ['CONFIRMING'],
+        provider: 'MOCK',
         leaseUntil: at(80 * SECOND),
       });
       expect(claimed).not.toContain(exchange.id);
@@ -127,9 +129,26 @@ describe.skipIf(!testDatabaseUrl)('опрос обменов', () => {
         now: at(60 * SECOND),
         limit: 1,
         statuses: WAITING,
+        provider: 'MOCK',
         leaseUntil: at(80 * SECOND),
       });
       expect(claimed).toHaveLength(1);
+    });
+
+    it('не берёт обмен другого провайдера', async () => {
+      const exchange = await waitingDeposit();
+
+      const claimed = await repository.claimDueForProviderCheck({
+        now: at(60 * SECOND),
+        limit: 1000,
+        statuses: WAITING,
+        provider: 'CHANGENOW',
+        leaseUntil: at(80 * SECOND),
+      });
+      expect(claimed).not.toContain(exchange.id);
+      expect((await repository.findById(exchange.id))?.status).toBe('WAITING_DEPOSIT');
+
+      expect(await claim(at(60 * SECOND))).toContain(exchange.id);
     });
   });
 

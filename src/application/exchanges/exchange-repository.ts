@@ -21,6 +21,12 @@ export interface NewDraft {
   readonly toCurrency: string;
   readonly toNetwork: string;
   readonly expectedFromAmount: string;
+  /**
+   * Сумма получения, если она известна уже в черновике.
+   * Для обычного обмена null: её записывает котировка.
+   * Для перевода одной монеты это сумма, которую задал пользователь.
+   */
+  readonly expectedToAmount?: string | null;
   readonly payoutAddress: string;
   readonly payoutExtraId: string | null;
   readonly refundAddress: string | null;
@@ -84,6 +90,11 @@ export interface ClaimDueParams {
   readonly limit: number;
   /** Статусы, которые нужно опрашивать у провайдера. Обмен без providerExchangeId не берётся. */
   readonly statuses: readonly ExchangeStatus[];
+  /**
+   * Провайдер текущего процесса. Обмены другого провайдера не захватываются:
+   * их идентификаторы этому адаптеру не принадлежат.
+   */
+  readonly provider: ExchangeProviderKind;
   /** Новый nextCheckAt захваченных обменов (lease): до этого момента их не возьмёт другой worker. */
   readonly leaseUntil: Date;
 }

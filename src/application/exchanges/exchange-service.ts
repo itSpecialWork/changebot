@@ -22,6 +22,11 @@ import {
   type RateType,
 } from '../../domain/exchanges/exchange-provider.js';
 import {
+  isSameAsset,
+  type PrivateTransferEstimate,
+  type PrivateTransferProvider,
+} from '../../domain/exchanges/private-transfer-provider.js';
+import {
   assertTransition,
   InvalidExchangeStatusTransitionError,
   isTerminalStatus,
@@ -79,6 +84,11 @@ export interface ExchangeServiceDependencies {
   readonly repository: ExchangeRepository;
   readonly provider: ExchangeProvider;
   readonly providerKind: ExchangeProviderKind;
+  /**
+   * Перевод одной монеты. Нет значения — пара с тем же тикером и сетью недоступна,
+   * и сервис её не отправляет в обмен.
+   */
+  readonly privateTransfer?: PrivateTransferProvider;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly config?: Partial<ExchangeServiceConfig>;
@@ -93,6 +103,11 @@ export interface CreateDraftInput {
   readonly toCurrency: string;
   readonly toNetwork: string;
   readonly fromAmount: string;
+  /**
+   * Сумма, которую должен получить адресат. Только для той же монеты и сети.
+   * Для обычного обмена поле не передаётся: сумму получения считает котировка.
+   */
+  readonly toAmount?: string;
   readonly rateType: RateType;
   readonly payoutAddress: string;
   readonly payoutExtraId?: string | null;
@@ -178,9 +193,25 @@ function normalizeAmount(value: string): string {
   return formatDecimal(scaled);
 }
 
+interface DraftAmounts {
+  readonly expectedFromAmount: string;
+  readonly expectedToAmount: string | null;
+  readonly rateType: RateType;
+}
+
+interface CreatedLeg {
+  readonly providerExchangeId: string;
+  readonly payinAddress: string;
+  readonly payinExtraId: string | null;
+  readonly providerStatus?: string;
+  readonly expectedFromAmount: string;
+  readonly expectedToAmount: string;
+}
+
 export class ExchangeService {
   private readonly repository: ExchangeRepository;
   private readonly provider: ExchangeProvider;
+  private readonly privateTransfer: PrivateTransferProvider | undefined;
   private readonly providerKind: ExchangeProviderKind;
   private readonly logger: Logger;
   private readonly now: () => Date;
@@ -189,6 +220,7 @@ export class ExchangeService {
   constructor(deps: ExchangeServiceDependencies) {
     this.repository = deps.repository;
     this.provider = deps.provider;
+    this.privateTransfer = deps.privateTransfer;
     this.providerKind = deps.providerKind;
     this.logger = deps.logger;
     this.now = deps.now ?? (() => new Date());
@@ -199,6 +231,15 @@ export class ExchangeService {
   async createDraft(input: CreateDraftInput): Promise<ExchangeRecord> {
     requireNonEmpty(input.clientRequestId, 'clientRequestId');
     requireNonEmpty(input.payoutAddress, 'payoutAddress');
+    const sameAsset = isSameAsset(
+      input.fromCurrency,
+      input.fromNetwork,
+      input.toCurrency,
+      input.toNetwork,
+    );
+    const amounts = sameAsset
+      ? await this.estimatePrivateTransferDraft(input)
+      : this.exchangeDraftAmounts(input);
     const draft = {
       userId: input.userId,
       provider: this.providerKind,
@@ -207,23 +248,27 @@ export class ExchangeService {
       fromNetwork: input.fromNetwork,
       toCurrency: input.toCurrency,
       toNetwork: input.toNetwork,
-      expectedFromAmount: normalizeAmount(input.fromAmount),
+      expectedFromAmount: amounts.expectedFromAmount,
+      expectedToAmount: amounts.expectedToAmount,
       payoutAddress: input.payoutAddress,
       payoutExtraId: normalizeOptional(input.payoutExtraId, 'payoutExtraId'),
       refundAddress: normalizeOptional(input.refundAddress, 'refundAddress'),
       refundExtraId: normalizeOptional(input.refundExtraId, 'refundExtraId'),
-      rateType: input.rateType,
+      rateType: amounts.rateType,
       nextCheckAt: new Date(this.now().getTime() + this.config.draftTtlMs),
     };
 
     const { exchange, created } = await this.repository.createDraft(draft);
     if (!created) {
+      const amountsMatch = sameAsset
+        ? exchange.expectedToAmount === draft.expectedToAmount
+        : exchange.expectedFromAmount === draft.expectedFromAmount;
       const same =
         exchange.fromCurrency === draft.fromCurrency &&
         exchange.fromNetwork === draft.fromNetwork &&
         exchange.toCurrency === draft.toCurrency &&
         exchange.toNetwork === draft.toNetwork &&
-        exchange.expectedFromAmount === draft.expectedFromAmount &&
+        amountsMatch &&
         exchange.rateType === draft.rateType &&
         exchange.payoutAddress === draft.payoutAddress &&
         exchange.payoutExtraId === draft.payoutExtraId &&
@@ -236,9 +281,48 @@ export class ExchangeService {
     return exchange;
   }
 
-  /** Список валют провайдера (для выбора пары в интерфейсе). */
+  /** Список валют провайдера (для выбора монеты отправки). */
   async listCurrencies(): Promise<readonly ProviderCurrency[]> {
     return this.provider.getCurrencies(this.callOptions());
+  }
+
+  /**
+   * Валюты на шаге «что получить». Та же монета и сеть остаётся в списке только
+   * когда включён перевод: иначе кнопку нечем завершить.
+   */
+  async listDestinationCurrencies(from: {
+    readonly ticker: string;
+    readonly network: string;
+  }): Promise<readonly ProviderCurrency[]> {
+    const currencies = await this.listCurrencies();
+    if (this.privateTransfer !== undefined) return currencies;
+    return currencies.filter(
+      (currency) => !(currency.ticker === from.ticker && currency.network === from.network),
+    );
+  }
+
+  /** Та же монета и сеть при включённом переводе. Другая сеть сюда не попадает. */
+  isPrivateTransferSelection(pair: CurrencyPair): boolean {
+    return (
+      this.privateTransfer !== undefined &&
+      isSameAsset(pair.fromCurrency, pair.fromNetwork, pair.toCurrency, pair.toNetwork)
+    );
+  }
+
+  /** Предпросмотр перевода: пользователь задаёт сумму получения. Ничего не сохраняет. */
+  async previewPrivateTransfer(input: {
+    readonly currency: string;
+    readonly network: string;
+    readonly toAmount: string;
+  }): Promise<PrivateTransferEstimate> {
+    return this.requirePrivateTransfer().estimate(
+      {
+        currency: input.currency,
+        network: input.network,
+        toAmount: normalizeAmount(input.toAmount),
+      },
+      this.callOptions(),
+    );
   }
 
   /**
@@ -322,6 +406,9 @@ export class ExchangeService {
   async requestQuote(userId: string, exchangeId: string): Promise<ExchangeRecord> {
     const exchange = await this.loadOwned(userId, exchangeId);
     this.requireStatus(exchange, 'DRAFT');
+    if (this.isPrivateTransferExchange(exchange)) {
+      return this.quotePrivateTransfer(exchange);
+    }
 
     const quote = await this.provider.getQuote(
       {
@@ -367,6 +454,9 @@ export class ExchangeService {
     const exchange = await this.loadOwned(userId, exchangeId);
     this.requireStatus(exchange, 'AWAITING_CONFIRMATION');
     await this.expireIfQuoteExpired(exchange);
+    if (this.isPrivateTransferExchange(exchange) && this.privateTransfer === undefined) {
+      throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Private transfer is not enabled');
+    }
 
     const now = this.now();
     // Compare-and-set: при гонке проигравший получит ExchangeStatusConflictError
@@ -375,24 +465,9 @@ export class ExchangeService {
       nextCheckAt: new Date(now.getTime() + this.config.creatingRecoveryDelayMs),
     });
 
-    let created;
+    let created: CreatedLeg;
     try {
-      created = await this.provider.createExchange(
-        {
-          fromCurrency: creating.fromCurrency,
-          fromNetwork: creating.fromNetwork,
-          toCurrency: creating.toCurrency,
-          toNetwork: creating.toNetwork,
-          fromAmount: creating.expectedFromAmount,
-          rateType: creating.rateType,
-          payoutAddress: this.requireValue(creating.payoutAddress, 'payoutAddress'),
-          payoutExtraId: creating.payoutExtraId,
-          refundAddress: creating.refundAddress,
-          refundExtraId: creating.refundExtraId,
-          rateId: creating.providerRateId,
-        },
-        this.callOptions(),
-      );
+      created = await this.openAtProvider(creating);
     } catch (error) {
       if (error instanceof ExchangeProviderError && !error.retryable) {
         await this.move(creating, 'FAILED', `create_failed_${error.code.toLowerCase()}`, {
@@ -414,9 +489,11 @@ export class ExchangeService {
           providerExchangeId: created.providerExchangeId,
           payinAddress: created.payinAddress,
           payinExtraId: created.payinExtraId,
-          providerStatus: created.providerStatus,
           expectedFromAmount: created.expectedFromAmount,
           expectedToAmount: created.expectedToAmount,
+          ...(created.providerStatus !== undefined
+            ? { providerStatus: created.providerStatus }
+            : {}),
         },
       });
     } catch (error) {
@@ -432,9 +509,10 @@ export class ExchangeService {
   /**
    * Сверяет обмен с провайдером и применяет новый статус.
    *
-   * Метод не бросает исключений при проблемах провайдера: такие случаи
-   * возвращаются как outcome = 'deferred' (счётчик неудач растёт, проверка
-   * откладывается с backoff, статус не меняется).
+   * Временная ошибка провайдера (UNAVAILABLE) не бросается наружу: обмен
+   * остаётся в текущем статусе, счётчик неудач растёт, проверка откладывается
+   * с backoff. Окончательный отказ повторно не опрашивается: обмен переходит
+   * в FAILED и покидает очередь.
    */
   async syncWithProvider(exchangeId: string): Promise<SyncResult> {
     const exchange = await this.repository.findById(exchangeId);
@@ -450,12 +528,10 @@ export class ExchangeService {
 
     let remote: ProviderExchangeStatus;
     try {
-      remote = await this.provider.getExchangeStatus(
-        exchange.providerExchangeId,
-        this.callOptions(),
-      );
+      remote = await this.fetchRemoteStatus(exchange);
     } catch (error) {
       if (error instanceof ExchangeProviderError) {
+        if (!error.retryable) return this.failProviderCheck(exchange, error.code);
         return this.defer(exchange, `provider_${error.code.toLowerCase()}`);
       }
       throw error;
@@ -528,6 +604,7 @@ export class ExchangeService {
       now,
       limit,
       statuses: PROVIDER_TRACKED_STATUSES,
+      provider: this.providerKind,
       leaseUntil: new Date(now.getTime() + this.config.providerTimeoutMs * 2),
     });
 
@@ -554,6 +631,140 @@ export class ExchangeService {
   }
 
   // --- Внутренняя логика --------------------------------------------------------
+
+  private exchangeDraftAmounts(input: CreateDraftInput): DraftAmounts {
+    if (input.toAmount !== undefined) {
+      throw new InvalidExchangeInputError('toAmount is only for a same-asset transfer');
+    }
+    return {
+      expectedFromAmount: normalizeAmount(input.fromAmount),
+      expectedToAmount: null,
+      rateType: input.rateType,
+    };
+  }
+
+  private async estimatePrivateTransferDraft(input: CreateDraftInput): Promise<DraftAmounts> {
+    if (input.toAmount === undefined) {
+      throw new InvalidExchangeInputError('toAmount is required for a same-asset transfer');
+    }
+    const estimate = await this.requirePrivateTransfer().estimate(
+      {
+        currency: input.fromCurrency,
+        network: input.fromNetwork,
+        toAmount: normalizeAmount(input.toAmount),
+      },
+      this.callOptions(),
+    );
+    return {
+      expectedFromAmount: estimate.fromAmount,
+      expectedToAmount: estimate.toAmount,
+      rateType: 'FIXED',
+    };
+  }
+
+  private async quotePrivateTransfer(exchange: ExchangeRecord): Promise<ExchangeRecord> {
+    const toAmount = this.requireValue(exchange.expectedToAmount, 'expectedToAmount');
+    const estimate = await this.requirePrivateTransfer().estimate(
+      {
+        currency: exchange.fromCurrency,
+        network: exchange.fromNetwork,
+        toAmount,
+      },
+      this.callOptions(),
+    );
+    return this.move(exchange, 'QUOTED', 'quote_obtained', {
+      nextCheckAt: estimate.validUntil,
+      patch: {
+        expectedFromAmount: estimate.fromAmount,
+        expectedToAmount: estimate.toAmount,
+        providerRateId: estimate.rateId,
+        quoteExpiresAt: estimate.validUntil,
+      },
+    });
+  }
+
+  private async openAtProvider(creating: ExchangeRecord): Promise<CreatedLeg> {
+    if (!this.isPrivateTransferExchange(creating)) {
+      const created = await this.provider.createExchange(
+        {
+          fromCurrency: creating.fromCurrency,
+          fromNetwork: creating.fromNetwork,
+          toCurrency: creating.toCurrency,
+          toNetwork: creating.toNetwork,
+          fromAmount: creating.expectedFromAmount,
+          rateType: creating.rateType,
+          payoutAddress: this.requireValue(creating.payoutAddress, 'payoutAddress'),
+          payoutExtraId: creating.payoutExtraId,
+          refundAddress: creating.refundAddress,
+          refundExtraId: creating.refundExtraId,
+          rateId: creating.providerRateId,
+        },
+        this.callOptions(),
+      );
+      return {
+        providerExchangeId: created.providerExchangeId,
+        payinAddress: created.payinAddress,
+        payinExtraId: created.payinExtraId,
+        providerStatus: created.providerStatus,
+        expectedFromAmount: created.expectedFromAmount,
+        expectedToAmount: created.expectedToAmount,
+      };
+    }
+
+    const rateId = creating.providerRateId;
+    if (rateId === null || rateId.trim() === '') {
+      throw new ExchangeProviderError('INVALID_REQUEST', 'Private transfer requires rate id');
+    }
+    const created = await this.requirePrivateTransfer().create(
+      {
+        currency: creating.fromCurrency,
+        network: creating.fromNetwork,
+        toAmount: this.requireValue(creating.expectedToAmount, 'expectedToAmount'),
+        address: this.requireValue(creating.payoutAddress, 'payoutAddress'),
+        extraId: creating.payoutExtraId,
+        refundAddress: creating.refundAddress,
+        refundExtraId: creating.refundExtraId,
+        rateId,
+      },
+      this.callOptions(),
+    );
+    return {
+      providerExchangeId: created.providerTransferId,
+      payinAddress: created.payinAddress,
+      payinExtraId: created.payinExtraId,
+      expectedFromAmount: created.fromAmount,
+      expectedToAmount: created.toAmount,
+    };
+  }
+
+  private async fetchRemoteStatus(exchange: ExchangeRecord): Promise<ProviderExchangeStatus> {
+    const providerExchangeId = this.requireValue(exchange.providerExchangeId, 'providerExchangeId');
+    if (!this.isPrivateTransferExchange(exchange)) {
+      return this.provider.getExchangeStatus(providerExchangeId, this.callOptions());
+    }
+    const transfer = this.privateTransfer;
+    if (transfer === undefined) {
+      throw new ExchangeProviderError('UNAVAILABLE', 'Private transfer is not enabled');
+    }
+    return transfer.getStatus(providerExchangeId, this.callOptions());
+  }
+
+  private isPrivateTransferExchange(exchange: ExchangeRecord): boolean {
+    return isSameAsset(
+      exchange.fromCurrency,
+      exchange.fromNetwork,
+      exchange.toCurrency,
+      exchange.toNetwork,
+    );
+  }
+
+  private requirePrivateTransfer(): PrivateTransferProvider {
+    const transfer = this.privateTransfer;
+    if (transfer === undefined) {
+      throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Private transfer is not enabled');
+    }
+    return transfer;
+  }
 
   private async loadOwned(userId: string, exchangeId: string): Promise<ExchangeRecord> {
     const exchange = await this.repository.findById(exchangeId);
@@ -615,6 +826,27 @@ export class ExchangeService {
       'Exchange status changed',
     );
     return updated;
+  }
+
+  /**
+   * Окончательный отказ провайдера не лечится повтором. Обмен сразу уходит
+   * из очереди опроса, иначе одна и та же ошибка будет всплывать без конца.
+   */
+  private async failProviderCheck(
+    exchange: ExchangeRecord,
+    code: ExchangeProviderError['code'],
+  ): Promise<SyncResult> {
+    const reason = `provider_${code.toLowerCase()}`;
+    this.logger.error(
+      { exchangeId: exchange.id, status: exchange.status, reason },
+      'Provider rejected the status check, exchange stopped',
+    );
+    const notification = buildExchangeStatusNotification(exchange, 'FAILED');
+    const updated = await this.move(exchange, 'FAILED', reason, {
+      nextCheckAt: null,
+      ...(notification ? { notification } : {}),
+    });
+    return { outcome: 'transitioned', exchange: updated };
   }
 
   private async defer(exchange: ExchangeRecord, reason: string): Promise<SyncResult> {

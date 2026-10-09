@@ -197,6 +197,7 @@ export class PrismaExchangeRepository implements ExchangeRepository {
       WHERE id IN (
         SELECT id FROM exchanges
         WHERE status = ANY(${[...params.statuses]}::text[]::exchange_status[])
+          AND provider = ${params.provider}::text::exchange_provider
           AND provider_exchange_id IS NOT NULL
           AND next_check_at <= ${params.now}::timestamptz
         ORDER BY next_check_at ASC

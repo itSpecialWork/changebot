@@ -470,6 +470,25 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
       expect(result.exchange.checkFailureCount).toBe(1);
     });
 
+    it('окончательный отказ провайдера снимает обмен с опроса', async () => {
+      const user = await createTestUser(prisma);
+      const exchange = await waitingDeposit(user.id);
+      vi.spyOn(provider, 'getExchangeStatus').mockRejectedValueOnce(
+        new ExchangeProviderError('INVALID_REQUEST', 'bad id'),
+      );
+
+      const result = await service.syncWithProvider(exchange.id);
+
+      expect(result.outcome).toBe('transitioned');
+      expect(result.exchange).toMatchObject({ status: 'FAILED', nextCheckAt: null });
+      expect((await history(exchange.id)).at(-1)).toMatchObject({
+        fromStatus: 'WAITING_DEPOSIT',
+        toStatus: 'FAILED',
+        reason: 'provider_invalid_request',
+      });
+      await expect(service.syncWithProvider(exchange.id)).rejects.toThrow(ExchangeNotSyncableError);
+    });
+
     it('ошибка провайдера откладывает проверку и не бросает исключение', async () => {
       const user = await createTestUser(prisma);
       const exchange = await waitingDeposit(user.id);
