@@ -255,6 +255,20 @@ describe('бот: поиск валюты', () => {
     expect(bot.lastButtons()).toContain('f:btc:btc');
     expect(bot.lastButtons()).not.toContain('f:eth:eth');
   });
+
+  it('команда /btc выбирает монету так же, как кнопка', async () => {
+    await bot.pressButton(USER, 'm:new');
+
+    const menu = bot.calls.find((call) => call.method === 'setMyCommands');
+    const commands = menu?.payload.commands as { command: string }[] | undefined;
+    expect(commands?.map((command) => command.command)).toContain('btc');
+    expect(commands?.map((command) => command.command)).toContain('xlm');
+
+    await bot.sendText(USER, '/btc');
+
+    expect(bot.lastText()).toContain('Что хотите получить');
+    expect(bot.lastButtons()).toContain('t:eth:eth');
+  });
 });
 
 describe('бот: тестовый режим', () => {

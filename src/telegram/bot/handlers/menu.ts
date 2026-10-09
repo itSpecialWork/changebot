@@ -1,4 +1,5 @@
 import type { BotContext, BotDependencies } from '../context.js';
+import { clearCurrencyCommands } from '../currency-commands.js';
 import { DEMO_BANNER, escapeHtml } from '../format.js';
 import { backToMenuKeyboard, mainMenuKeyboard } from '../keyboards.js';
 import { reply, show } from '../ui.js';
@@ -18,6 +19,7 @@ export function createMenuHandlers(deps: BotDependencies) {
     /** Команда /start: приветствие и главное меню. */
     async start(ctx: BotContext): Promise<void> {
       ctx.session.flow = undefined;
+      await clearCurrencyCommands(ctx, deps.logger);
       const name = ctx.appUser.firstName;
       const greeting = name ? `Здравствуйте, ${escapeHtml(name)}!` : 'Здравствуйте!';
       await reply(ctx, menuText(greeting), mainMenuKeyboard());
@@ -26,6 +28,7 @@ export function createMenuHandlers(deps: BotDependencies) {
     /** Главное меню; сбрасывает незавершённый диалог. */
     async menu(ctx: BotContext): Promise<void> {
       ctx.session.flow = undefined;
+      await clearCurrencyCommands(ctx, deps.logger);
       await show(ctx, menuText(), mainMenuKeyboard());
     },
 

@@ -5,19 +5,40 @@ import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
 import { formatListButton, networkLabel } from './format.js';
 
-/** Сколько валют помещается на один экран кнопок. */
+/** Сколько валют помещается на страницу полного каталога. */
 export const CURRENCY_PAGE_SIZE = 48;
 
+/** Сколько подсказок показывать, пока пользователь набирает тикер. */
+export const CURRENCY_SUGGESTION_SIZE = 8;
+
 /**
- * Короткий список на кнопке «Новый обмен».
+ * Короткий список на шаге выбора валюты.
+ * Порядок — как на кнопках. Монеты, которых нет в каталоге, пропускаются.
  * USDT в сети BNB у ChangeNOW имеет код `bsc`; если его нет, берётся `bnb`.
- * Из двух кодов показывается один, чтобы не было двух одинаковых кнопок.
  */
-const POPULAR_PAIRS: readonly { readonly ticker: string; readonly networks: readonly string[] }[] =
-  [
-    { ticker: 'usdt', networks: ['trx'] },
-    { ticker: 'usdt', networks: ['bsc', 'bnb'] },
-  ];
+export const POPULAR_PAIRS: readonly {
+  readonly ticker: string;
+  readonly networks: readonly string[];
+}[] = [
+  { ticker: 'usdt', networks: ['trx'] },
+  { ticker: 'trx', networks: ['trx'] },
+  { ticker: 'btc', networks: ['btc'] },
+  { ticker: 'eth', networks: ['eth'] },
+  { ticker: 'usdt', networks: ['eth'] },
+  { ticker: 'usdt', networks: ['bsc', 'bnb'] },
+  { ticker: 'sol', networks: ['sol'] },
+  { ticker: 'ton', networks: ['ton'] },
+  { ticker: 'ltc', networks: ['ltc'] },
+  { ticker: 'xrp', networks: ['xrp'] },
+];
+
+/** Подпись кнопки для пар, где код сети провайдера непонятен пользователю. */
+const PAIR_BUTTON_LABELS: Readonly<Record<string, string>> = {
+  'usdt:trx': 'USDT · TRC20',
+  'usdt:eth': 'USDT · ERC20',
+  'usdt:bsc': 'USDT · BEP20',
+  'usdt:bnb': 'USDT · BEP20',
+};
 
 export type CurrencyCatalog = 'popular' | 'all';
 
@@ -46,8 +67,58 @@ function popularCurrencies(currencies: readonly ProviderCurrency[]): ProviderCur
 }
 
 /**
+ * Насколько валюта подходит запросу.
+ * 0 — тикер целиком, 1 — тикер с этих букв, 2 — тикер содержит,
+ * 3 — название с этих букв, 4 — название содержит.
+ */
+function matchRank(currency: ProviderCurrency, query: string): number | undefined {
+  const ticker = currency.ticker.toLowerCase();
+  const name = currency.name.toLowerCase();
+  if (ticker === query) return 0;
+  if (ticker.startsWith(query)) return 1;
+  if (ticker.includes(query)) return 2;
+  if (name.startsWith(query)) return 3;
+  if (name.includes(query)) return 4;
+  return undefined;
+}
+
+function popularIndex(currency: ProviderCurrency): number {
+  const index = POPULAR_PAIRS.findIndex(
+    (pair) => pair.ticker === currency.ticker && pair.networks.includes(currency.network),
+  );
+  return index === -1 ? POPULAR_PAIRS.length : index;
+}
+
+/**
+ * Подсказки по вводу.
+ * Если есть монеты, чей тикер начинается с запроса, остальные совпадения скрыты:
+ * буква «x» показывает XLM и XRP, а не любое название с этой буквой.
+ */
+function searchCurrencies(
+  currencies: readonly ProviderCurrency[],
+  query: string,
+): ProviderCurrency[] {
+  const ranked = currencies.flatMap((currency) => {
+    const rank = matchRank(currency, query);
+    return rank === undefined ? [] : [{ currency, rank }];
+  });
+  const prefix = ranked.some((item) => item.rank <= 1);
+  const matches = prefix ? ranked.filter((item) => item.rank <= 1) : ranked;
+  return matches
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const popular = popularIndex(a.currency) - popularIndex(b.currency);
+      if (popular !== 0) return popular;
+      const ticker = a.currency.ticker.localeCompare(b.currency.ticker);
+      if (ticker !== 0) return ticker;
+      return a.currency.network.localeCompare(b.currency.network);
+    })
+    .map((item) => item.currency);
+}
+
+/**
  * Страница валют для кнопок.
- * Без запроса: короткий список актуальных валют или полный каталог.
+ * Без запроса: короткий список популярных валют или полный каталог.
  * Небезопасные тикер и сеть в кнопки не попадают: callback их не примет.
  */
 export function selectCurrencies(
@@ -62,9 +133,7 @@ export function selectCurrencies(
   let pool: readonly ProviderCurrency[];
   if (query !== '') {
     mode = 'search';
-    pool = safe.filter(
-      (currency) => currency.ticker.includes(query) || currency.name.toLowerCase().includes(query),
-    );
+    pool = searchCurrencies(safe, query);
   } else if (state.catalog === 'popular') {
     mode = 'popular';
     pool = popularCurrencies(safe);
@@ -73,10 +142,11 @@ export function selectCurrencies(
     pool = safe;
   }
 
-  const pageCount = Math.max(1, Math.ceil(pool.length / CURRENCY_PAGE_SIZE));
+  const size = mode === 'search' ? CURRENCY_SUGGESTION_SIZE : CURRENCY_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(pool.length / size));
   const page = Math.min(Math.max(state.page, 0), pageCount - 1);
-  const start = page * CURRENCY_PAGE_SIZE;
-  return { mode, items: pool.slice(start, start + CURRENCY_PAGE_SIZE), page, pageCount };
+  const start = page * size;
+  return { mode, items: pool.slice(start, start + size), page, pageCount };
 }
 
 export function mainMenuKeyboard(): InlineKeyboard {
@@ -123,6 +193,8 @@ export function currencyKeyboard(
 }
 
 function currencyButtonLabel(currency: ProviderCurrency): string {
+  const pair = PAIR_BUTTON_LABELS[`${currency.ticker}:${currency.network}`];
+  if (pair !== undefined) return pair;
   const ticker = currency.ticker.toUpperCase();
   const network = networkLabel(currency.network);
   return currency.ticker === currency.network || ticker.toLowerCase() === network

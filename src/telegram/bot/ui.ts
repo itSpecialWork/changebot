@@ -13,24 +13,37 @@ export async function show(
   ctx: BotContext,
   text: string,
   keyboard?: InlineKeyboard,
-): Promise<void> {
+  replaceMessageId?: number,
+): Promise<number | undefined> {
   const other = {
     parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
     ...(keyboard ? { reply_markup: keyboard } : {}),
   } as const;
 
-  if (ctx.callbackQuery?.message) {
+  const chatId = ctx.chat?.id;
+  if (replaceMessageId !== undefined && chatId !== undefined && !ctx.callbackQuery) {
     try {
-      await ctx.editMessageText(text, other);
-      return;
+      await ctx.api.editMessageText(chatId, replaceMessageId, text, other);
+      return replaceMessageId;
     } catch (error) {
-      // Тот же текст нажатием «Обновить»: ничего делать не нужно.
-      if (isMessageNotModified(error)) return;
+      if (isMessageNotModified(error)) return replaceMessageId;
       // Сообщение удалено или слишком старое: отправим новое.
     }
   }
-  await ctx.reply(text, other);
+
+  if (ctx.callbackQuery?.message) {
+    try {
+      await ctx.editMessageText(text, other);
+      return ctx.callbackQuery.message.message_id;
+    } catch (error) {
+      // Тот же текст нажатием «Обновить»: ничего делать не нужно.
+      if (isMessageNotModified(error)) return ctx.callbackQuery.message.message_id;
+      // Сообщение удалено или слишком старое: отправим новое.
+    }
+  }
+  const sent = await ctx.reply(text, other);
+  return sent.message_id;
 }
 
 /** Всегда отправляет новое сообщение (ответ на текст пользователя). */

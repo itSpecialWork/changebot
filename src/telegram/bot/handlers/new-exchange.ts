@@ -21,6 +21,11 @@ import {
   parseDecimal,
 } from '../../../domain/shared/decimal-string.js';
 import type { BotContext, BotDependencies, CurrencyChoice, NewExchangeFlow } from '../context.js';
+import {
+  clearCurrencyCommands,
+  parseCurrencyCommand,
+  publishCurrencyCommands,
+} from '../currency-commands.js';
 import { describeFailure } from '../error-text.js';
 import { escapeHtml, formatCurrency, payoutPrompt, renderExchangeCard } from '../format.js';
 import {
@@ -124,14 +129,14 @@ function currencyStepText(
   selection: CurrencySelection,
 ): string {
   if (selection.mode === 'search' && selection.items.length === 0) {
-    return 'Ничего не найдено. Введите тикер, например <code>btc</code>.';
+    return 'Ничего не найдено. Введите тикер, например <code>btc</code>, или нажмите «Актуальные».';
   }
   const queryLine =
     selection.mode === 'search'
-      ? `\nСовпадения по запросу <code>${escapeHtml(flow.currencyQuery)}</code>.`
+      ? `\nСовпадения по <code>${escapeHtml(flow.currencyQuery)}</code>.`
       : selection.mode === 'popular'
-        ? '\nАктуальные валюты ниже. Полный список — кнопка «Все валюты». Или напишите тикер, например <code>btc</code>.'
-        : '\nПолный список. Листайте страницы или напишите тикер. Кнопка «Актуальные» вернёт короткий список.';
+        ? '\nПопулярные валюты ниже. Нажмите «/» и введите тикер — Telegram покажет подсказки.\nПолный список — «Все валюты».'
+        : '\nПолный список. Листайте страницы или нажмите «/» и введите тикер. «Актуальные» вернёт короткий список.';
   if (step === 'from') {
     return `<b>Новый обмен</b>\nЧто вы отдаёте?${queryLine}`;
   }
@@ -147,7 +152,14 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
 
   async function staleButton(ctx: BotContext): Promise<void> {
     ctx.session.flow = undefined;
+    await clearCurrencyCommands(ctx, deps.logger);
     await show(ctx, 'Эта кнопка устарела. Начните заново.', mainMenuKeyboard());
+  }
+
+  async function leaveCurrencyMenu(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
+    delete flow.currencyCommands;
+    delete flow.commandMenuKey;
+    await clearCurrencyCommands(ctx, deps.logger);
   }
 
   /** Ошибка котировки: недоступная пара сбрасывает диалог, сумма и сбой оставляют шаг. */
@@ -197,11 +209,21 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       });
     }
     flow.currencyPage = selection.page;
-    await show(
+    const menuKey = `${flow.step}:${from?.ticker ?? ''}:${from?.network ?? ''}`;
+    if (flow.commandMenuKey !== menuKey) {
+      const lookup = await publishCurrencyCommands(ctx, currencies, deps.logger);
+      if (lookup) {
+        flow.currencyCommands = lookup;
+        flow.commandMenuKey = menuKey;
+      }
+    }
+    const messageId = await show(
       ctx,
       currencyStepText(flow.step, flow, selection),
       currencyKeyboard(flow.step, selection),
+      ctx.callbackQuery ? undefined : flow.screenMessageId,
     );
+    if (messageId !== undefined) flow.screenMessageId = messageId;
   }
 
   /** Создаёт черновик, получает котировку и показывает карточку подтверждения. */
@@ -403,6 +425,72 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     await finalize(ctx, flow, extraId);
   }
 
+  async function selectFrom(ctx: BotContext, ticker: string, network: string): Promise<void> {
+    const flow = ctx.session.flow;
+    const currency = flow?.step === 'from' ? await findCurrency(ticker, network) : undefined;
+    if (!flow || !currency) {
+      await staleButton(ctx);
+      return;
+    }
+    flow.from = toChoice(currency);
+    flow.step = 'to';
+    flow.currencyQuery = '';
+    flow.currencyPage = 0;
+    flow.currencyCatalog = 'popular';
+    await showCurrencies(ctx, flow);
+  }
+
+  async function selectTo(ctx: BotContext, ticker: string, network: string): Promise<void> {
+    const flow = ctx.session.flow;
+    const currency = flow?.step === 'to' ? await findCurrency(ticker, network) : undefined;
+    if (!flow?.from || !currency) {
+      await staleButton(ctx);
+      return;
+    }
+    const to = toChoice(currency);
+    await leaveCurrencyMenu(ctx, flow);
+    const pair = {
+      fromCurrency: flow.from.ticker,
+      fromNetwork: flow.from.network,
+      toCurrency: to.ticker,
+      toNetwork: to.network,
+    };
+    if (deps.exchanges.isPrivateTransferSelection(pair)) {
+      flow.to = to;
+      flow.rateType = 'FIXED';
+      flow.step = 'amount';
+      delete flow.amountRange;
+      await show(ctx, receiveAmountPrompt(label(to)), cancelFlowKeyboard());
+      return;
+    }
+    if (sameCurrency(flow.from, to)) {
+      await staleButton(ctx);
+      return;
+    }
+    flow.to = to;
+    flow.step = 'rate';
+    await show(
+      ctx,
+      `${escapeHtml(label(flow.from))} → <b>${escapeHtml(label(flow.to))}</b>\n\nВыберите тип курса:\n• плавающий — итог зависит от рынка на момент обмена;\n• фиксированный — сумма получения гарантирована на время действия котировки.`,
+      rateTypeKeyboard(flow.from.supportsFixedRate && flow.to.supportsFixedRate),
+    );
+  }
+
+  /** «/xlm» из меню команд. Чужая команда остаётся обычным сообщением. */
+  async function applyCurrencyCommand(
+    ctx: BotContext,
+    flow: NewExchangeFlow,
+    text: string,
+  ): Promise<boolean> {
+    if (flow.step !== 'from' && flow.step !== 'to') return false;
+    const name = parseCurrencyCommand(text);
+    const target = name === undefined ? undefined : flow.currencyCommands?.[name];
+    if (!target) return false;
+    if (flow.step === 'from') await selectFrom(ctx, target.ticker, target.network);
+    else await selectTo(ctx, target.ticker, target.network);
+    return true;
+  }
+
   return {
     async start(ctx: BotContext): Promise<void> {
       const flow: NewExchangeFlow = {
@@ -416,20 +504,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       await showCurrencies(ctx, flow);
     },
 
-    async selectFrom(ctx: BotContext, ticker: string, network: string): Promise<void> {
-      const flow = ctx.session.flow;
-      const currency = flow?.step === 'from' ? await findCurrency(ticker, network) : undefined;
-      if (!flow || !currency) {
-        await staleButton(ctx);
-        return;
-      }
-      flow.from = toChoice(currency);
-      flow.step = 'to';
-      flow.currencyQuery = '';
-      flow.currencyPage = 0;
-      flow.currencyCatalog = 'popular';
-      await showCurrencies(ctx, flow);
-    },
+    selectFrom,
 
     async changePage(ctx: BotContext, direction: 'next' | 'prev'): Promise<void> {
       const flow = ctx.session.flow;
@@ -441,40 +516,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       await showCurrencies(ctx, flow);
     },
 
-    async selectTo(ctx: BotContext, ticker: string, network: string): Promise<void> {
-      const flow = ctx.session.flow;
-      const currency = flow?.step === 'to' ? await findCurrency(ticker, network) : undefined;
-      if (!flow?.from || !currency) {
-        await staleButton(ctx);
-        return;
-      }
-      const to = toChoice(currency);
-      const pair = {
-        fromCurrency: flow.from.ticker,
-        fromNetwork: flow.from.network,
-        toCurrency: to.ticker,
-        toNetwork: to.network,
-      };
-      if (deps.exchanges.isPrivateTransferSelection(pair)) {
-        flow.to = to;
-        flow.rateType = 'FIXED';
-        flow.step = 'amount';
-        delete flow.amountRange;
-        await show(ctx, receiveAmountPrompt(label(to)), cancelFlowKeyboard());
-        return;
-      }
-      if (sameCurrency(flow.from, to)) {
-        await staleButton(ctx);
-        return;
-      }
-      flow.to = to;
-      flow.step = 'rate';
-      await show(
-        ctx,
-        `${escapeHtml(label(flow.from))} → <b>${escapeHtml(label(flow.to))}</b>\n\nВыберите тип курса:\n• плавающий — итог зависит от рынка на момент обмена;\n• фиксированный — сумма получения гарантирована на время действия котировки.`,
-        rateTypeKeyboard(flow.from.supportsFixedRate && flow.to.supportsFixedRate),
-      );
-    },
+    selectTo,
 
     async selectRate(ctx: BotContext, rateType: RateType): Promise<void> {
       const flow = ctx.session.flow;
@@ -539,7 +581,8 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
      */
     async onText(ctx: BotContext, text: string): Promise<boolean> {
       const flow = ctx.session.flow;
-      if (!flow || text.startsWith('/')) return false;
+      if (!flow) return false;
+      if (text.startsWith('/')) return applyCurrencyCommand(ctx, flow, text);
       switch (flow.step) {
         case 'from':
         case 'to':

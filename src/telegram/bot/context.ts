@@ -44,8 +44,19 @@ export interface NewExchangeFlow {
   /** Фильтр каталога на шагах выбора валюты. Пустая строка — без поиска. */
   currencyQuery: string;
   currencyPage: number;
-  /** Короткий список актуальных валют или полный каталог. */
+  /** Короткий список популярных валют или полный каталог. */
   currencyCatalog: 'popular' | 'all';
+  /** Сообщение с кнопками валют. Новый ввод тикера обновляет его, а не шлёт ещё одно. */
+  screenMessageId?: number;
+  /**
+   * Команды меню «/» на шаге выбора валюты: имя команды → монета.
+   * Telegram показывает их как подсказки, пока пользователь набирает «/».
+   */
+  currencyCommands?: Readonly<
+    Record<string, { readonly ticker: string; readonly network: string }>
+  >;
+  /** Для какого шага меню «/» уже отправлено в Telegram. */
+  commandMenuKey?: string;
   /** Диапазон суммы, известный на шаге ввода. Нет, если провайдер его не отдал. */
   amountRange?: ProviderAmountRange;
 }
