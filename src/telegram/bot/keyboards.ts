@@ -149,7 +149,6 @@ export function cancelFlowKeyboard(): InlineKeyboard {
 export function skipExtraIdKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
     .text('Пропустить', callbackData.skipExtraId)
-    .row()
     .text('❌ Отмена', callbackData.menu);
 }
 

@@ -396,7 +396,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       await reply(
         ctx,
         'Memo/Tag выглядит некорректно. Проверьте и отправьте ещё раз.',
-        cancelFlowKeyboard(),
+        flow.to?.extraId === 'optional' ? skipExtraIdKeyboard() : cancelFlowKeyboard(),
       );
       return;
     }

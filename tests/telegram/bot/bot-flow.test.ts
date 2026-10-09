@@ -123,6 +123,30 @@ describe('бот: создание обмена', () => {
     expect(bot.lastText()).toContain('устарела');
   });
 
+  it('для валюты с необязательным memo ставит «Пропустить» рядом с отменой', async () => {
+    await bot.pressButton(USER, 'm:new');
+    await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.sendText(USER, 'xlm');
+    await bot.pressButton(USER, 't:xlm:xlm');
+    await bot.pressButton(USER, 'r:F');
+    await bot.sendText(USER, '10');
+    await bot.sendText(USER, ADDRESS);
+
+    expect(bot.lastText()).toContain('нажмите «Пропустить»');
+    const markup = bot.last().payload.reply_markup as {
+      inline_keyboard: { callback_data?: string }[][];
+    };
+    expect(markup.inline_keyboard.map((row) => row.map((button) => button.callback_data))).toEqual([
+      ['s:skip', 'm:menu'],
+    ]);
+
+    await bot.pressButton(USER, 's:skip');
+
+    const exchange = [...bot.exchangeRepository.rows.values()][0];
+    expect(exchange?.payoutExtraId).toBeNull();
+    expect(exchange?.toCurrency).toBe('xlm');
+  });
+
   it('для валюты с обязательным memo запрашивает его', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');

@@ -78,6 +78,14 @@ export const DEFAULT_MOCK_CURRENCIES: readonly ProviderCurrency[] = [
     supportsFixedRate: false,
     featured: true,
   },
+  {
+    ticker: 'xlm',
+    network: 'xlm',
+    name: 'Stellar',
+    extraId: 'optional',
+    supportsFixedRate: true,
+    featured: false,
+  },
 ];
 
 /** Вымышленные курсы: ключ — `from:fromNetwork>to:toNetwork`, значение — сколько to за 1 from. */
@@ -86,6 +94,7 @@ export const DEFAULT_MOCK_RATES: Readonly<Record<string, string>> = {
   'btc:btc>usdt:trx': '60000',
   'eth:eth>btc:btc': '0.05',
   'usdt:trx>xrp:xrp': '2',
+  'usdt:trx>xlm:xlm': '10',
 };
 
 export interface MockExchangeProviderOptions {

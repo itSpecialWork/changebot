@@ -298,7 +298,7 @@ function toCurrency(currency: ChangeNowCurrency): ProviderCurrency | undefined {
     ticker,
     network,
     name,
-    extraId: mapExtraId(currency.hasExternalId, currency.isExtraIdSupported),
+    extraId: mapExtraId(currency.isExtraIdSupported),
     supportsFixedRate: currency.supportsFixedRate,
     featured: currency.featured,
   };
@@ -306,11 +306,12 @@ function toCurrency(currency: ChangeNowCurrency): ProviderCurrency | undefined {
 
 /**
  * extraId в домене — про получение средств (payout).
- * hasExternalId без поддержки на выплате означает memo депозита, его выдаёт ChangeNOW.
+ * isExtraIdSupported значит, что адрес получения может принять memo, но не обязан:
+ * личный кошелёк вроде Exodus часто обходится без него.
+ * hasExternalId к выплате не относится: это memo депозита, его выдаёт ChangeNOW.
  */
-function mapExtraId(hasExternalId: boolean, isExtraIdSupported: boolean): ExtraIdRequirement {
-  if (!isExtraIdSupported) return 'none';
-  return hasExternalId ? 'required' : 'optional';
+function mapExtraId(isExtraIdSupported: boolean): ExtraIdRequirement {
+  return isExtraIdSupported ? 'optional' : 'none';
 }
 
 function requireAmount(value: string): string {

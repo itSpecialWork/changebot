@@ -120,7 +120,7 @@ describe('ChangeNowExchangeProvider', () => {
         ticker: 'usdt',
         network: 'algo',
         name: 'Tether (Algorand)',
-        extraId: 'required',
+        extraId: 'optional',
         supportsFixedRate: true,
         featured: false,
       },
