@@ -72,8 +72,10 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return newExchange.selectFrom(ctx, action.ticker, action.network);
       case 'to':
         return newExchange.selectTo(ctx, action.ticker, action.network);
+      case 'ticker':
+        return newExchange.selectTicker(ctx, action.side, action.ticker);
       case 'rate':
-        return newExchange.selectRate(ctx, action.rateType);
+        return newExchange.selectRate(ctx);
       case 'transfer_basis':
         return newExchange.selectTransferBasis(ctx, action.basis);
       case 'skip_extra_id':
@@ -90,6 +92,8 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return exchanges.advanceDemo(ctx, action.exchangeId);
       case 'currency_page':
         return newExchange.changePage(ctx, action.direction);
+      case 'currency_back':
+        return newExchange.backToTokens(ctx);
       case 'currency_catalog':
         return newExchange.setCatalog(ctx, action.catalog);
     }

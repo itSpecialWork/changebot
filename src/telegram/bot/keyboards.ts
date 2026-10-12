@@ -3,6 +3,7 @@ import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
 import type { ProviderCurrency } from '../../domain/exchanges/exchange-provider.js';
 import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
+import type { CurrencyStage, NetworkScope } from './context.js';
 import { formatListButton, networkLabel } from './format.js';
 
 /** Сколько валют помещается на страницу полного каталога. */
@@ -44,24 +45,65 @@ export type CurrencyCatalog = 'popular' | 'all';
 
 export interface CurrencySelection {
   readonly mode: 'all' | 'popular' | 'search';
+  readonly stage: CurrencyStage;
   readonly items: readonly ProviderCurrency[];
   readonly page: number;
   readonly pageCount: number;
 }
 
-function popularCurrencies(currencies: readonly ProviderCurrency[]): ProviderCurrency[] {
-  const byKey = new Map(
-    currencies.map((currency) => [`${currency.ticker}:${currency.network}`, currency]),
-  );
+export interface CurrencyListState {
+  readonly query: string;
+  readonly page: number;
+  readonly catalog: CurrencyCatalog;
+  readonly stage?: CurrencyStage;
+  readonly ticker?: string;
+  readonly networkScope?: NetworkScope;
+}
+
+function currencyKey(currency: ProviderCurrency): string {
+  return `${currency.ticker}:${currency.network}`;
+}
+
+/** Сети короткого списка для одной монеты. Для USDT это TRC20, ERC20 и BEP20. */
+function popularNetworksFor(
+  currencies: readonly ProviderCurrency[],
+  ticker: string,
+): ProviderCurrency[] {
+  const byKey = new Map(currencies.map((currency) => [currencyKey(currency), currency]));
   const picked: ProviderCurrency[] = [];
   for (const pair of POPULAR_PAIRS) {
+    if (pair.ticker !== ticker) continue;
     for (const network of pair.networks) {
-      const currency = byKey.get(`${pair.ticker}:${network}`);
-      if (currency) {
-        picked.push(currency);
-        break;
-      }
+      const currency = byKey.get(`${ticker}:${network}`);
+      if (!currency) continue;
+      picked.push(currency);
+      break;
     }
+  }
+  return picked;
+}
+
+/** По одной кнопке на монету, в порядке короткого списка. */
+function popularTokens(currencies: readonly ProviderCurrency[]): ProviderCurrency[] {
+  const seen = new Set<string>();
+  const picked: ProviderCurrency[] = [];
+  for (const pair of POPULAR_PAIRS) {
+    if (seen.has(pair.ticker)) continue;
+    const first = popularNetworksFor(currencies, pair.ticker)[0];
+    if (!first) continue;
+    seen.add(pair.ticker);
+    picked.push(first);
+  }
+  return picked;
+}
+
+function uniqueTokens(currencies: readonly ProviderCurrency[]): ProviderCurrency[] {
+  const seen = new Set<string>();
+  const picked: ProviderCurrency[] = [];
+  for (const currency of currencies) {
+    if (seen.has(currency.ticker)) continue;
+    seen.add(currency.ticker);
+    picked.push(currency);
   }
   return picked;
 }
@@ -89,19 +131,22 @@ function popularIndex(currency: ProviderCurrency): number {
   return index === -1 ? POPULAR_PAIRS.length : index;
 }
 
-/**
- * Подсказки по вводу.
- * Если есть монеты, чей тикер начинается с запроса, остальные совпадения скрыты:
- * буква «x» показывает XLM и XRP, а не любое название с этой буквой.
- */
-function searchCurrencies(
-  currencies: readonly ProviderCurrency[],
-  query: string,
-): ProviderCurrency[] {
-  const ranked = currencies.flatMap((currency) => {
+/** По одному лучшему совпадению на тикер. Буква «x» показывает XRP и XLM, а не каждую их сеть. */
+function searchTokens(currencies: readonly ProviderCurrency[], query: string): ProviderCurrency[] {
+  const best = new Map<string, { currency: ProviderCurrency; rank: number }>();
+  for (const currency of currencies) {
     const rank = matchRank(currency, query);
-    return rank === undefined ? [] : [{ currency, rank }];
-  });
+    if (rank === undefined) continue;
+    const current = best.get(currency.ticker);
+    if (
+      current === undefined ||
+      rank < current.rank ||
+      (rank === current.rank && popularIndex(currency) < popularIndex(current.currency))
+    ) {
+      best.set(currency.ticker, { currency, rank });
+    }
+  }
+  const ranked = [...best.values()];
   const prefix = ranked.some((item) => item.rank <= 1);
   const matches = prefix ? ranked.filter((item) => item.rank <= 1) : ranked;
   return matches
@@ -109,11 +154,35 @@ function searchCurrencies(
       if (a.rank !== b.rank) return a.rank - b.rank;
       const popular = popularIndex(a.currency) - popularIndex(b.currency);
       if (popular !== 0) return popular;
-      const ticker = a.currency.ticker.localeCompare(b.currency.ticker);
-      if (ticker !== 0) return ticker;
-      return a.currency.network.localeCompare(b.currency.network);
+      return a.currency.ticker.localeCompare(b.currency.ticker);
     })
     .map((item) => item.currency);
+}
+
+function networksOf(currencies: readonly ProviderCurrency[], ticker: string): ProviderCurrency[] {
+  return currencies.filter((currency) => currency.ticker === ticker);
+}
+
+function networkMatches(currency: ProviderCurrency, query: string): boolean {
+  const label = networkButtonLabel(currency).toLowerCase();
+  const network = networkLabel(currency.network).toLowerCase();
+  return (
+    currency.network.toLowerCase().includes(query) ||
+    network.includes(query) ||
+    label.includes(query) ||
+    currency.name.toLowerCase().includes(query)
+  );
+}
+
+function pageSlice(
+  pool: readonly ProviderCurrency[],
+  page: number,
+  size: number,
+): Pick<CurrencySelection, 'items' | 'page' | 'pageCount'> {
+  const pageCount = Math.max(1, Math.ceil(pool.length / size));
+  const current = Math.min(Math.max(page, 0), pageCount - 1);
+  const start = current * size;
+  return { items: pool.slice(start, start + size), page: current, pageCount };
 }
 
 /**
@@ -121,32 +190,43 @@ function searchCurrencies(
  * Без запроса: короткий список популярных валют или полный каталог.
  * Небезопасные тикер и сеть в кнопки не попадают: callback их не примет.
  */
+/**
+ * Страница кнопок.
+ * Сначала уникальные монеты. Сеть открывается отдельно: в коротком списке только
+ * его сети, в полном каталоге и поиске — все сети этой монеты.
+ */
 export function selectCurrencies(
   currencies: readonly ProviderCurrency[],
-  state: { readonly query: string; readonly page: number; readonly catalog: CurrencyCatalog },
+  state: CurrencyListState,
 ): CurrencySelection {
   const safe = currencies.filter(
     (currency) => isCallbackSafeCode(currency.ticker) && isCallbackSafeCode(currency.network),
   );
   const query = state.query.trim().toLowerCase();
+  const stage = state.stage ?? 'token';
+  if (stage === 'network') {
+    const ticker = state.ticker ?? '';
+    const scope = state.networkScope ?? 'all';
+    const base = scope === 'popular' ? popularNetworksFor(safe, ticker) : networksOf(safe, ticker);
+    const pool = query === '' ? base : base.filter((currency) => networkMatches(currency, query));
+    const mode = query !== '' ? 'search' : scope === 'popular' ? 'popular' : 'all';
+    return { mode, stage, ...pageSlice(pool, state.page, CURRENCY_PAGE_SIZE) };
+  }
+
   let mode: CurrencySelection['mode'];
   let pool: readonly ProviderCurrency[];
   if (query !== '') {
     mode = 'search';
-    pool = searchCurrencies(safe, query);
+    pool = searchTokens(safe, query);
   } else if (state.catalog === 'popular') {
     mode = 'popular';
-    pool = popularCurrencies(safe);
+    pool = popularTokens(safe);
   } else {
     mode = 'all';
-    pool = safe;
+    pool = uniqueTokens(safe);
   }
-
   const size = mode === 'search' ? CURRENCY_SUGGESTION_SIZE : CURRENCY_PAGE_SIZE;
-  const pageCount = Math.max(1, Math.ceil(pool.length / size));
-  const page = Math.min(Math.max(state.page, 0), pageCount - 1);
-  const start = page * size;
-  return { mode, items: pool.slice(start, start + size), page, pageCount };
+  return { mode, stage, ...pageSlice(pool, state.page, size) };
 }
 
 export function mainMenuKeyboard(): InlineKeyboard {
@@ -161,24 +241,33 @@ export function backToMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('🏠 В меню', callbackData.menu);
 }
 
-/** Кнопки выбора валюты. `kind` определяет, какое действие вызовет нажатие. */
+/** Кнопки монеты или её сети. `kind` определяет, какое действие вызовет нажатие. */
 export function currencyKeyboard(
   kind: 'from' | 'to',
   selection: CurrencySelection,
 ): InlineKeyboard {
   const keyboard = new InlineKeyboard();
-  const build = kind === 'from' ? callbackData.from : callbackData.to;
   selection.items.forEach((currency, index) => {
     if (index > 0 && index % 2 === 0) keyboard.row();
-    keyboard.text(currencyButtonLabel(currency), build(currency.ticker, currency.network));
+    if (selection.stage === 'network') {
+      const build = kind === 'from' ? callbackData.from : callbackData.to;
+      keyboard.text(networkButtonLabel(currency), build(currency.ticker, currency.network));
+    } else {
+      keyboard.text(currency.ticker.toUpperCase(), callbackData.ticker(kind, currency.ticker));
+    }
   });
   if (selection.page > 0 || selection.page + 1 < selection.pageCount) {
     breakRow(keyboard);
-    if (selection.page > 0) keyboard.text('◀️ Назад', callbackData.currencyPrev);
+    if (selection.page > 0) {
+      keyboard.text(selection.stage === 'network' ? '◀️' : '◀️ Назад', callbackData.currencyPrev);
+    }
     if (selection.page + 1 < selection.pageCount)
       keyboard.text('Дальше ▶️', callbackData.currencyNext);
   }
   breakRow(keyboard);
+  if (selection.stage === 'network') {
+    return keyboard.text('Назад', callbackData.currencyBack).text('❌ Отмена', callbackData.menu);
+  }
   if (selection.mode === 'popular') {
     keyboard.text('📋 Все валюты', callbackData.currencyAll);
   } else if (selection.mode === 'all') {
@@ -192,14 +281,17 @@ export function currencyKeyboard(
   return keyboard.text('❌ Отмена', callbackData.menu);
 }
 
-function currencyButtonLabel(currency: ProviderCurrency): string {
-  const pair = PAIR_BUTTON_LABELS[`${currency.ticker}:${currency.network}`];
-  if (pair !== undefined) return pair;
+function networkButtonLabel(currency: ProviderCurrency): string {
+  const pair = PAIR_BUTTON_LABELS[currencyKey(currency)];
+  if (pair !== undefined) {
+    const separator = pair.lastIndexOf(' · ');
+    return separator === -1 ? pair : pair.slice(separator + 3);
+  }
   const ticker = currency.ticker.toUpperCase();
   const network = networkLabel(currency.network);
   return currency.ticker === currency.network || ticker.toLowerCase() === network
     ? ticker
-    : `${ticker} · ${network}`;
+    : network.toUpperCase();
 }
 
 /** Новая строка, если текущая уже не пустая. Пустые ряды Telegram не принимает. */
@@ -215,12 +307,6 @@ export function transferBasisKeyboard(): InlineKeyboard {
     .text('У меня есть сумма', callbackData.transferSpend)
     .row()
     .text('❌ Отмена', callbackData.menu);
-}
-
-export function rateTypeKeyboard(fixedAvailable: boolean): InlineKeyboard {
-  const keyboard = new InlineKeyboard().text('📈 Плавающий', callbackData.rate('FLOATING'));
-  if (fixedAvailable) keyboard.text('🔒 Фиксированный', callbackData.rate('FIXED'));
-  return keyboard.row().text('❌ Отмена', callbackData.menu);
 }
 
 export function cancelFlowKeyboard(): InlineKeyboard {

@@ -11,13 +11,12 @@ beforeEach(async () => {
   bot = await BotHarness.create();
 });
 
-/** Проходит диалог до карточки подтверждения (USDT trx → BTC, плавающий курс, 100). */
+/** Проходит диалог до карточки подтверждения (USDT trx → BTC, фиксированный курс, 100). */
 async function reachConfirmation(userId = USER): Promise<string> {
   await bot.pressButton(userId, 'm:new');
   await bot.pressButton(userId, 'f:usdt:trx');
   await bot.pressButton(userId, 'u:a');
   await bot.pressButton(userId, 't:btc:btc');
-  await bot.pressButton(userId, 'r:F');
   await bot.sendText(userId, '100');
   await bot.sendText(userId, ADDRESS);
   const confirm = bot.lastButtons().find((data) => data.startsWith('c:'));
@@ -59,6 +58,19 @@ describe('бот: меню', () => {
 
     expect(bot.lastText()).toContain('пока нет обменов');
   });
+
+  it('справка описывает монету, сеть, меню «/» и автоматический курс', async () => {
+    await bot.pressButton(USER, 'm:help');
+
+    const text = bot.lastText();
+    expect(text).toContain('монету и сеть');
+    expect(text).toContain('/usdt_trc20');
+    expect(text).toContain('Курс фиксированный, если пара его поддерживает');
+    expect(text).toContain('которую получит адресат');
+    expect(text).toContain('которая есть у вас');
+    expect(text).not.toContain('Выберите тип курса');
+    expect(text).toContain('/start, /menu, /exchanges, /help');
+  });
 });
 
 describe('бот: создание обмена', () => {
@@ -69,6 +81,7 @@ describe('бот: создание обмена', () => {
     expect(text).toContain('Ждёт вашего подтверждения');
     expect(text).toContain('100 USDT (trx)');
     expect(text).toContain('0.0016 BTC');
+    expect(text).toContain('Курс: фиксированный');
     expect(text).toContain(ADDRESS);
     expect(confirm).toMatch(/^c:[0-9a-f-]{36}$/);
     expect(bot.exchangeRepository.rows.size).toBe(1);
@@ -81,7 +94,7 @@ describe('бот: создание обмена', () => {
 
     const text = bot.lastText();
     expect(text).toContain('Ожидаем ваш платёж');
-    expect(text).toContain('mock-payin-address-1');
+    expect(text).toContain('mock-payin-address-');
     expect(text).toContain('Тестовый режим');
     const exchange = [...bot.exchangeRepository.rows.values()][0];
     expect(exchange?.status).toBe('WAITING_DEPOSIT');
@@ -110,15 +123,15 @@ describe('бот: создание обмена', () => {
     expect(bot.exchangeRepository.rows.get(exchangeId)?.status).toBe('EXPIRED');
   });
 
-  it('фиксированный курс доступен только для поддерживаемых пар', async () => {
+  it('без поддержки фиксированного курса сразу берёт плавающий и не принимает старую кнопку', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
-    expect(bot.lastButtons()).toContain('r:F');
+    expect(bot.lastText()).toContain('Введите сумму');
+    expect(bot.lastButtons()).not.toContain('r:F');
     expect(bot.lastButtons()).not.toContain('r:X');
 
-    // Принудительно присланная кнопка фиксированного курса отклоняется.
     await bot.pressButton(USER, 'r:X');
     expect(bot.lastText()).toContain('устарела');
   });
@@ -128,7 +141,6 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.sendText(USER, 'xlm');
     await bot.pressButton(USER, 't:xlm:xlm');
-    await bot.pressButton(USER, 'r:F');
     await bot.sendText(USER, '10');
     await bot.sendText(USER, ADDRESS);
 
@@ -152,7 +164,6 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
-    await bot.pressButton(USER, 'r:F');
     await bot.sendText(USER, '10');
     await bot.sendText(USER, ADDRESS);
     expect(bot.lastText()).toContain('нужен Memo/Tag');
@@ -162,6 +173,8 @@ describe('бот: создание обмена', () => {
 
     const exchange = [...bot.exchangeRepository.rows.values()][0];
     expect(exchange?.payoutExtraId).toBe('12345');
+    expect(exchange?.rateType).toBe('FLOATING');
+    expect(bot.lastText()).toContain('Курс: плавающий');
     expect(bot.lastText()).toContain('Memo/Tag: <code>12345</code>');
   });
 
@@ -170,7 +183,6 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
-    await bot.pressButton(USER, 'r:F');
     expect(bot.lastText()).toContain('Минимум: <b>0.0001</b>');
     expect(bot.lastText()).not.toContain('100</code>');
 
@@ -190,7 +202,6 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
-    await bot.pressButton(USER, 'r:F');
     await bot.sendText(USER, '100');
 
     await bot.sendText(USER, '<script>alert(1)</script>');
@@ -205,7 +216,6 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, 'f:btc:btc');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:xrp:xrp');
-    await bot.pressButton(USER, 'r:F');
 
     expect(bot.lastText()).toContain('недоступна');
     expect(bot.exchangeRepository.rows.size).toBe(0);
@@ -271,8 +281,28 @@ describe('бот: поиск валюты', () => {
     await bot.sendText(USER, 'btc');
 
     expect(bot.lastText()).toContain('Совпадения');
-    expect(bot.lastButtons()).toContain('f:btc:btc');
-    expect(bot.lastButtons()).not.toContain('f:eth:eth');
+    expect(bot.lastButtons()).toContain('f:btc');
+    expect(bot.lastButtons()).not.toContain('f:btc:btc');
+    expect(bot.lastButtons()).not.toContain('f:eth');
+  });
+
+  it('сначала показывает монету, затем сеть, и «Назад» возвращает к монетам', async () => {
+    await bot.pressButton(USER, 'm:new');
+    expect(bot.lastButtons()).toContain('f:usdt');
+    expect(bot.lastButtons()).not.toContain('f:usdt:trx');
+
+    await bot.pressButton(USER, 'f:usdt');
+    expect(bot.lastText()).toContain('Выберите сеть');
+    expect(bot.lastButtons()).toContain('f:usdt:trx');
+    expect(bot.lastButtons()).toContain('u:b');
+
+    await bot.pressButton(USER, 'u:b');
+    expect(bot.lastText()).toContain('Что вы отдаёте');
+    expect(bot.lastButtons()).toContain('f:btc');
+
+    await bot.pressButton(USER, 'f:btc');
+    expect(bot.lastButtons()).toEqual(expect.arrayContaining(['f:btc:btc', 'u:b', 'm:menu']));
+    expect(bot.lastButtons().filter((data) => data.startsWith('f:btc:'))).toEqual(['f:btc:btc']);
   });
 
   it('команда /btc выбирает монету так же, как кнопка', async () => {
@@ -286,7 +316,8 @@ describe('бот: поиск валюты', () => {
     await bot.sendText(USER, '/btc');
 
     expect(bot.lastText()).toContain('Что хотите получить');
-    expect(bot.lastButtons()).toContain('t:eth:eth');
+    expect(bot.lastButtons()).toContain('t:eth');
+    expect(bot.lastButtons()).not.toContain('t:eth:eth');
   });
 
   it('сбрасывает меню «/» на отмене, /start и после выбора пары', async () => {
@@ -319,7 +350,7 @@ describe('бот: поиск валюты', () => {
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
     expect(resets()).toBe(beforePair + 1);
-    expect(bot.lastText()).toContain('Выберите тип курса');
+    expect(bot.lastText()).toContain('Введите сумму');
 
     await bot.sendText(USER, '/btc');
     expect(bot.lastText()).toContain('Не понял');

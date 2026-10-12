@@ -30,6 +30,12 @@ describe('callback data', () => {
       ticker: 'btc',
       network: 'btc',
     });
+    expect(parseCallbackData(callbackData.ticker('from', 'usdt'))).toEqual({
+      kind: 'ticker',
+      side: 'from',
+      ticker: 'usdt',
+    });
+    expect(parseCallbackData(callbackData.currencyBack)).toEqual({ kind: 'currency_back' });
     expect(parseCallbackData(callbackData.rate('FIXED'))).toEqual({
       kind: 'rate',
       rateType: 'FIXED',
@@ -77,7 +83,7 @@ describe('callback data', () => {
     'c:not-a-uuid',
     `c:${UUID}:extra`,
     'f:USDT:TRX',
-    'f:usdt',
+    'f:USDT',
     'u:z',
     '__proto__',
     'constructor',

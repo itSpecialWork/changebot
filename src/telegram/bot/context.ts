@@ -22,8 +22,13 @@ export interface CurrencyChoice {
   readonly extraId: ExtraIdRequirement;
 }
 
-export type FlowStep =
-  'from' | 'to' | 'rate' | 'transfer_basis' | 'amount' | 'address' | 'extra_id';
+export type FlowStep = 'from' | 'to' | 'transfer_basis' | 'amount' | 'address' | 'extra_id';
+
+/** Сначала имя монеты, затем её сети. */
+export type CurrencyStage = 'token' | 'network';
+
+/** Откуда открыт экран сети: короткий список или весь каталог этой монеты. */
+export type NetworkScope = 'popular' | 'all';
 
 /** В переводе одной монеты: сумма получателя или сумма, которая есть у отправителя. */
 export type TransferAmountBasis = 'receive' | 'spend';
@@ -47,11 +52,20 @@ export interface NewExchangeFlow {
   /** Какую сумму ввёл пользователь на переводе одной монеты. */
   amountBasis?: TransferAmountBasis;
   payoutAddress?: string;
-  /** Фильтр каталога на шагах выбора валюты. Пустая строка — без поиска. */
+  /** Фильтр списка монет. Пустая строка — без поиска. */
   currencyQuery: string;
   currencyPage: number;
-  /** Короткий список популярных валют или полный каталог. */
+  /** Короткий список популярных монет или полный каталог. */
   currencyCatalog: 'popular' | 'all';
+  /** Имя монеты или выбор сети уже выбранной монеты. */
+  currencyStage: CurrencyStage;
+  /** Монета, для которой открыт экран сети. */
+  pendingTicker?: string;
+  /** Сети короткого списка или все сети монеты из текущего каталога. */
+  networkScope: NetworkScope;
+  /** Фильтр на экране сети. */
+  networkQuery: string;
+  networkPage: number;
   /** Сообщение с кнопками валют. Новый ввод тикера обновляет его, а не шлёт ещё одно. */
   screenMessageId?: number;
   /**

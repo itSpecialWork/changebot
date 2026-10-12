@@ -12,6 +12,7 @@ export type CallbackAction =
   | { readonly kind: 'help' }
   | { readonly kind: 'from'; readonly ticker: string; readonly network: string }
   | { readonly kind: 'to'; readonly ticker: string; readonly network: string }
+  | { readonly kind: 'ticker'; readonly side: 'from' | 'to'; readonly ticker: string }
   | { readonly kind: 'rate'; readonly rateType: RateType }
   | { readonly kind: 'transfer_basis'; readonly basis: 'receive' | 'spend' }
   | { readonly kind: 'skip_extra_id' }
@@ -21,6 +22,7 @@ export type CallbackAction =
   | { readonly kind: 'cancel'; readonly exchangeId: string }
   | { readonly kind: 'demo'; readonly exchangeId: string }
   | { readonly kind: 'currency_page'; readonly direction: 'next' | 'prev' }
+  | { readonly kind: 'currency_back' }
   | { readonly kind: 'currency_catalog'; readonly catalog: 'popular' | 'all' };
 
 const MAX_CALLBACK_BYTES = 64;
@@ -39,11 +41,13 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'b:s': { kind: 'transfer_basis', basis: 'spend' },
   'u:n': { kind: 'currency_page', direction: 'next' },
   'u:p': { kind: 'currency_page', direction: 'prev' },
+  'u:b': { kind: 'currency_back' },
   'u:h': { kind: 'currency_catalog', catalog: 'popular' },
   'u:a': { kind: 'currency_catalog', catalog: 'all' },
 };
 
 const CURRENCY_PATTERN = new RegExp(`^([ft]):(${CODE}):(${CODE})$`);
+const TICKER_PATTERN = new RegExp(`^([ft]):(${CODE})$`);
 const EXCHANGE_PATTERN = new RegExp(`^([opcxd]):(${UUID})$`);
 
 const EXCHANGE_KINDS = {
@@ -68,6 +72,12 @@ export function parseCallbackData(data: string): CallbackAction | undefined {
   if (currency) {
     const [, prefix, ticker = '', network = ''] = currency;
     return { kind: prefix === 'f' ? 'from' : 'to', ticker, network };
+  }
+
+  const tickerOnly = TICKER_PATTERN.exec(data);
+  if (tickerOnly) {
+    const [, prefix, ticker = ''] = tickerOnly;
+    return { kind: 'ticker', side: prefix === 'f' ? 'from' : 'to', ticker };
   }
 
   const exchange = EXCHANGE_PATTERN.exec(data);
@@ -98,6 +108,8 @@ export const callbackData = {
   transferSpend: 'b:s',
   from: (ticker: string, network: string): string => checked(`f:${ticker}:${network}`),
   to: (ticker: string, network: string): string => checked(`t:${ticker}:${network}`),
+  ticker: (side: 'from' | 'to', ticker: string): string =>
+    checked(`${side === 'from' ? 'f' : 't'}:${ticker}`),
   open: (exchangeId: string): string => checked(`o:${exchangeId}`),
   prepare: (exchangeId: string): string => checked(`p:${exchangeId}`),
   confirm: (exchangeId: string): string => checked(`c:${exchangeId}`),
@@ -105,6 +117,7 @@ export const callbackData = {
   demo: (exchangeId: string): string => checked(`d:${exchangeId}`),
   currencyNext: 'u:n',
   currencyPrev: 'u:p',
+  currencyBack: 'u:b',
   currencyPopular: 'u:h',
   currencyAll: 'u:a',
 } as const;

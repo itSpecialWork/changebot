@@ -1,9 +1,12 @@
 /**
- * Диалог «новый обмен»: валюта отправки → валюта получения → тип курса → сумма →
+ * Диалог «новый обмен»: монета и сеть отправки → монета и сеть получения → сумма →
  * адрес (→ memo) → черновик и котировка → подтверждение.
  *
- * Та же монета и та же сеть пропускают тип курса: это перевод без конвертации,
- * пользователь вводит сумму получения. Другая сеть идёт обычным обменом.
+ * Сеть спрашивается всегда, даже если она одна. Команда «/», которая уже называет пару,
+ * выбирает её сразу. Тип курса не спрашивается: фиксированный, если пара его поддерживает,
+ * иначе плавающий.
+ *
+ * Та же монета и та же сеть — перевод без конвертации. Другая сеть идёт обычным обменом.
  *
  * Обработчики собирают ввод и вызывают ExchangeService; проверки пары, суммы и сети
  * выполняет сервис и провайдер. Состояние диалога живёт в сессии (память процесса).
@@ -39,7 +42,6 @@ import {
   currencyKeyboard,
   exchangeCardKeyboard,
   mainMenuKeyboard,
-  rateTypeKeyboard,
   selectCurrencies,
   skipExtraIdKeyboard,
   transferBasisKeyboard,
@@ -147,11 +149,38 @@ function readAmount(text: string): string | undefined {
   }
 }
 
+function chosenRateType(from: CurrencyChoice, to: CurrencyChoice): RateType {
+  return from.supportsFixedRate && to.supportsFixedRate ? 'FIXED' : 'FLOATING';
+}
+
+function resetTokenList(flow: NewExchangeFlow): void {
+  flow.currencyStage = 'token';
+  delete flow.pendingTicker;
+  flow.networkQuery = '';
+  flow.networkPage = 0;
+  flow.networkScope = 'popular';
+}
+
 function currencyStepText(
   step: 'from' | 'to',
   flow: NewExchangeFlow,
   selection: CurrencySelection,
 ): string {
+  if (selection.stage === 'network') {
+    if (selection.mode === 'search' && selection.items.length === 0) {
+      return 'Ничего не найдено. Введите сеть, например <code>trx</code>, или нажмите «Назад».';
+    }
+    const ticker = escapeHtml((flow.pendingTicker ?? '').toUpperCase());
+    const queryLine =
+      selection.mode === 'search'
+        ? `\nСовпадения по <code>${escapeHtml(flow.networkQuery)}</code>.`
+        : '';
+    const body = `Монета: <b>${ticker}</b>\nВыберите сеть.${queryLine}`;
+    if (step === 'to' && flow.from) {
+      return `Вы отдаёте: <b>${escapeHtml(label(flow.from))}</b>\n${body}`;
+    }
+    return `<b>Новый обмен</b>\n${body}`;
+  }
   if (selection.mode === 'search' && selection.items.length === 0) {
     return 'Ничего не найдено. Введите тикер, например <code>btc</code>, или нажмите «Актуальные».';
   }
@@ -159,7 +188,7 @@ function currencyStepText(
     selection.mode === 'search'
       ? `\nСовпадения по <code>${escapeHtml(flow.currencyQuery)}</code>.`
       : selection.mode === 'popular'
-        ? '\nПопулярные валюты ниже. Нажмите «/» и введите тикер — Telegram покажет подсказки.\nПолный список — «Все валюты».'
+        ? '\nПопулярные монеты ниже. Нажмите «/» и введите тикер — Telegram покажет подсказки.\nПолный список — «Все валюты».'
         : '\nПолный список. Листайте страницы или нажмите «/» и введите тикер. «Актуальные» вернёт короткий список.';
   if (step === 'from') {
     return `<b>Новый обмен</b>\nЧто вы отдаёте?${queryLine}`;
@@ -206,33 +235,44 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     return currencies.find((c) => c.ticker === ticker && c.network === network);
   }
 
+  async function currenciesFor(flow: NewExchangeFlow): Promise<readonly ProviderCurrency[]> {
+    const from = flow.from;
+    if (flow.step === 'to' && from) {
+      return deps.exchanges.listDestinationCurrencies({
+        ticker: from.ticker,
+        network: from.network,
+      });
+    }
+    return deps.exchanges.listCurrencies();
+  }
+
   async function showCurrencies(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
     if (flow.step !== 'from' && flow.step !== 'to') {
       await staleButton(ctx);
       return;
     }
     const from = flow.from;
-    const currencies =
-      flow.step === 'to' && from
-        ? await deps.exchanges.listDestinationCurrencies({
-            ticker: from.ticker,
-            network: from.network,
-          })
-        : await deps.exchanges.listCurrencies();
+    const currencies = await currenciesFor(flow);
+    const onNetwork = flow.currencyStage === 'network' && flow.pendingTicker !== undefined;
     let selection = selectCurrencies(currencies, {
-      query: flow.currencyQuery,
-      page: flow.currencyPage,
+      query: onNetwork ? flow.networkQuery : flow.currencyQuery,
+      page: onNetwork ? flow.networkPage : flow.currencyPage,
       catalog: flow.currencyCatalog,
+      stage: onNetwork ? 'network' : 'token',
+      networkScope: flow.networkScope,
+      ...(flow.pendingTicker !== undefined ? { ticker: flow.pendingTicker } : {}),
     });
-    if (selection.mode === 'popular' && selection.items.length === 0) {
+    if (!onNetwork && selection.mode === 'popular' && selection.items.length === 0) {
       flow.currencyCatalog = 'all';
       selection = selectCurrencies(currencies, {
         query: '',
         page: 0,
         catalog: 'all',
+        stage: 'token',
       });
     }
-    flow.currencyPage = selection.page;
+    if (onNetwork) flow.networkPage = selection.page;
+    else flow.currencyPage = selection.page;
     const menuKey = `${flow.step}:${from?.ticker ?? ''}:${from?.network ?? ''}`;
     if (flow.commandMenuKey !== menuKey) {
       const lookup = await publishCurrencyCommands(ctx, currencies, deps.logger);
@@ -248,6 +288,34 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       ctx.callbackQuery ? undefined : flow.screenMessageId,
     );
     if (messageId !== undefined) flow.screenMessageId = messageId;
+  }
+
+  async function showAmountStep(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
+    const { from, to, rateType } = flow;
+    if (!from || !to || !rateType) {
+      await staleButton(ctx);
+      return;
+    }
+    flow.step = 'amount';
+    delete flow.amountRange;
+    try {
+      flow.amountRange = await deps.exchanges.getAmountRange({
+        fromCurrency: from.ticker,
+        fromNetwork: from.network,
+        toCurrency: to.ticker,
+        toNetwork: to.network,
+        rateType,
+      });
+    } catch (error) {
+      if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
+        ctx.session.flow = undefined;
+        await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
+        return;
+      }
+      if (!(error instanceof ExchangeProviderError)) throw error;
+      deps.logger.warn({ code: error.code }, 'Amount range is unavailable');
+    }
+    await show(ctx, amountPrompt(label(from), flow.amountRange), cancelFlowKeyboard());
   }
 
   /** Создаёт черновик, получает котировку и показывает карточку подтверждения. */
@@ -442,8 +510,13 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       );
       return;
     }
-    flow.currencyQuery = query;
-    flow.currencyPage = 0;
+    if (flow.currencyStage === 'network') {
+      flow.networkQuery = query;
+      flow.networkPage = 0;
+    } else {
+      flow.currencyQuery = query;
+      flow.currencyPage = 0;
+    }
     await showCurrencies(ctx, flow);
   }
 
@@ -472,6 +545,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     flow.currencyQuery = '';
     flow.currencyPage = 0;
     flow.currencyCatalog = 'popular';
+    resetTokenList(flow);
     await showCurrencies(ctx, flow);
   }
 
@@ -504,12 +578,8 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       return;
     }
     flow.to = to;
-    flow.step = 'rate';
-    await show(
-      ctx,
-      `${escapeHtml(label(flow.from))} → <b>${escapeHtml(label(flow.to))}</b>\n\nВыберите тип курса:\n• плавающий — итог зависит от рынка на момент обмена;\n• фиксированный — сумма получения гарантирована на время действия котировки.`,
-      rateTypeKeyboard(flow.from.supportsFixedRate && flow.to.supportsFixedRate),
-    );
+    flow.rateType = chosenRateType(flow.from, to);
+    await showAmountStep(ctx, flow);
   }
 
   /** «/xlm» из меню команд. Чужая команда остаётся обычным сообщением. */
@@ -535,6 +605,10 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
         currencyQuery: '',
         currencyPage: 0,
         currencyCatalog: 'popular',
+        currencyStage: 'token',
+        networkScope: 'popular',
+        networkQuery: '',
+        networkPage: 0,
       };
       ctx.session.flow = flow;
       await showCurrencies(ctx, flow);
@@ -542,13 +616,56 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
 
     selectFrom,
 
+    async selectTicker(ctx: BotContext, side: 'from' | 'to', ticker: string): Promise<void> {
+      const flow = ctx.session.flow;
+      if (flow?.step !== side || flow.currencyStage === 'network') {
+        await staleButton(ctx);
+        return;
+      }
+      const selection = selectCurrencies(await currenciesFor(flow), {
+        query: flow.currencyQuery,
+        page: flow.currencyPage,
+        catalog: flow.currencyCatalog,
+        stage: 'token',
+      });
+      if (!selection.items.some((item) => item.ticker === ticker)) {
+        await staleButton(ctx);
+        return;
+      }
+      flow.pendingTicker = ticker;
+      flow.currencyStage = 'network';
+      flow.networkScope = selection.mode === 'popular' ? 'popular' : 'all';
+      flow.networkQuery = '';
+      flow.networkPage = 0;
+      await showCurrencies(ctx, flow);
+    },
+
+    async backToTokens(ctx: BotContext): Promise<void> {
+      const flow = ctx.session.flow;
+      if (
+        !flow ||
+        (flow.step !== 'from' && flow.step !== 'to') ||
+        flow.currencyStage !== 'network'
+      ) {
+        await staleButton(ctx);
+        return;
+      }
+      flow.currencyStage = 'token';
+      delete flow.pendingTicker;
+      flow.networkQuery = '';
+      flow.networkPage = 0;
+      await showCurrencies(ctx, flow);
+    },
+
     async changePage(ctx: BotContext, direction: 'next' | 'prev'): Promise<void> {
       const flow = ctx.session.flow;
       if (!flow || (flow.step !== 'from' && flow.step !== 'to')) {
         await staleButton(ctx);
         return;
       }
-      flow.currencyPage = direction === 'next' ? flow.currencyPage + 1 : flow.currencyPage - 1;
+      const delta = direction === 'next' ? 1 : -1;
+      if (flow.currencyStage === 'network') flow.networkPage += delta;
+      else flow.currencyPage += delta;
       await showCurrencies(ctx, flow);
     },
 
@@ -567,40 +684,8 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       await show(ctx, prompt, cancelFlowKeyboard());
     },
 
-    async selectRate(ctx: BotContext, rateType: RateType): Promise<void> {
-      const flow = ctx.session.flow;
-      const fixedAvailable =
-        flow?.from?.supportsFixedRate === true && flow.to?.supportsFixedRate === true;
-      if (
-        flow?.step !== 'rate' ||
-        !flow.from ||
-        !flow.to ||
-        (rateType === 'FIXED' && !fixedAvailable)
-      ) {
-        await staleButton(ctx);
-        return;
-      }
-      flow.rateType = rateType;
-      flow.step = 'amount';
-      delete flow.amountRange;
-      try {
-        flow.amountRange = await deps.exchanges.getAmountRange({
-          fromCurrency: flow.from.ticker,
-          fromNetwork: flow.from.network,
-          toCurrency: flow.to.ticker,
-          toNetwork: flow.to.network,
-          rateType,
-        });
-      } catch (error) {
-        if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
-          ctx.session.flow = undefined;
-          await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
-          return;
-        }
-        if (!(error instanceof ExchangeProviderError)) throw error;
-        deps.logger.warn({ code: error.code }, 'Amount range is unavailable');
-      }
-      await show(ctx, amountPrompt(label(flow.from), flow.amountRange), cancelFlowKeyboard());
+    async selectRate(ctx: BotContext): Promise<void> {
+      await staleButton(ctx);
     },
 
     async setCatalog(ctx: BotContext, catalog: 'popular' | 'all'): Promise<void> {
@@ -609,6 +694,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
         await staleButton(ctx);
         return;
       }
+      resetTokenList(flow);
       flow.currencyCatalog = catalog;
       flow.currencyQuery = '';
       flow.currencyPage = 0;

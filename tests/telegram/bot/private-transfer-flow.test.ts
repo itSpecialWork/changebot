@@ -25,7 +25,7 @@ describe('бот: перевод той же монеты выключен', () 
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
 
-    expect(bot.lastButtons()).not.toContain('t:usdt:trx');
+    expect(bot.lastButtons()).not.toContain('t:usdt');
 
     await bot.pressButton(USER, 't:usdt:trx');
     expect(bot.lastText()).toContain('устарела');
@@ -43,6 +43,10 @@ describe('бот: перевод той же монеты включён', () =>
   it('оставляет ту же монету кнопкой и проводит перевод до оплаты', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
+    expect(bot.lastButtons()).toContain('t:usdt');
+    expect(bot.lastButtons()).not.toContain('t:usdt:trx');
+
+    await bot.pressButton(USER, 't:usdt');
     expect(bot.lastButtons()).toContain('t:usdt:trx');
 
     await bot.pressButton(USER, 't:usdt:trx');
@@ -111,14 +115,15 @@ describe('бот: перевод той же монеты включён', () =>
     expect(bot.lastText()).toContain('Ждём подтверждения сети');
   });
 
-  it('другая монета по-прежнему спрашивает тип курса', async () => {
+  it('другая монета сразу переходит к сумме и не спрашивает тип курса', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
     await bot.pressButton(USER, 'u:a');
     await bot.pressButton(USER, 't:btc:btc');
 
-    expect(bot.lastText()).toContain('Выберите тип курса');
-    expect(bot.lastButtons()).toContain('r:F');
+    expect(bot.lastText()).toContain('Введите сумму');
+    expect(bot.lastButtons()).not.toContain('r:F');
+    expect(bot.lastText()).not.toContain('Что вы указываете');
   });
 
   it('на шаге выбора суммы текст просит кнопку и не создаёт черновик', async () => {
@@ -190,12 +195,16 @@ describe('бот: перевод той же монеты включён', () =>
 
     await catalog.pressButton(USER, 'm:new');
     await catalog.pressButton(USER, 'f:usdt:trx');
+    expect(catalog.lastButtons()).toContain('t:usdt');
+
+    await catalog.pressButton(USER, 't:usdt');
     expect(catalog.lastButtons()).toContain('t:usdt:eth');
+    expect(catalog.lastButtons()).toContain('t:usdt:trx');
 
     await catalog.pressButton(USER, 't:usdt:eth');
 
-    expect(catalog.lastText()).toContain('Выберите тип курса');
-    expect(catalog.lastButtons()).toContain('r:F');
+    expect(catalog.lastText()).toContain('Введите сумму');
+    expect(catalog.lastButtons()).not.toContain('r:F');
     expect(catalog.lastText()).not.toContain('Что вы указываете');
     expect(estimate).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
