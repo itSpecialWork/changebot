@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BotHarness } from './harness.js';
 
 const USER = 1001;
@@ -220,6 +220,25 @@ describe('бот: создание обмена', () => {
 
     expect(bot.lastText()).toContain('устарела');
   });
+
+  it('на подтверждении просроченной котировки просит начать новый обмен и не создаёт его у провайдера', async () => {
+    const create = vi.spyOn(bot.provider, 'createExchange');
+    const confirm = await reachConfirmation();
+    const exchangeId = confirm.slice(2);
+    const exchange = bot.exchangeRepository.rows.get(exchangeId);
+    if (!exchange) throw new Error('Exchange is missing');
+    bot.exchangeRepository.rows.set(exchangeId, {
+      ...exchange,
+      quoteExpiresAt: new Date(0),
+    });
+
+    await bot.pressButton(USER, confirm);
+
+    expect(bot.lastText()).toContain('Котировка истекла. Начните новый обмен.');
+    expect(bot.exchangeRepository.rows.get(exchangeId)?.status).toBe('EXPIRED');
+    expect(bot.exchangeRepository.rows.get(exchangeId)?.providerExchangeId).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe('бот: мои обмены', () => {
@@ -268,6 +287,43 @@ describe('бот: поиск валюты', () => {
 
     expect(bot.lastText()).toContain('Что хотите получить');
     expect(bot.lastButtons()).toContain('t:eth:eth');
+  });
+
+  it('сбрасывает меню «/» на отмене, /start и после выбора пары', async () => {
+    const resets = (): number =>
+      bot.calls.filter((call) => call.method === 'deleteMyCommands').length;
+
+    await bot.pressButton(USER, 'm:new');
+    expect(bot.calls.some((call) => call.method === 'setMyCommands')).toBe(true);
+    expect(resets()).toBe(0);
+
+    await bot.sendText(USER, '/btc');
+    expect(bot.lastText()).toContain('Что хотите получить');
+    expect(resets()).toBe(0);
+
+    await bot.pressButton(USER, 'm:menu');
+    expect(resets()).toBe(1);
+    expect(bot.calls.find((call) => call.method === 'deleteMyCommands')?.payload).toEqual({
+      scope: { type: 'chat', chat_id: USER },
+    });
+
+    await bot.pressButton(USER, 'm:new');
+    await bot.sendText(USER, '/start');
+    expect(resets()).toBe(2);
+    expect(bot.lastButtons()).toContain('m:new');
+
+    await bot.pressButton(USER, 'm:new');
+    const beforePair = resets();
+    await bot.pressButton(USER, 'f:usdt:trx');
+    expect(resets()).toBe(beforePair);
+    await bot.pressButton(USER, 'u:a');
+    await bot.pressButton(USER, 't:btc:btc');
+    expect(resets()).toBe(beforePair + 1);
+    expect(bot.lastText()).toContain('Выберите тип курса');
+
+    await bot.sendText(USER, '/btc');
+    expect(bot.lastText()).toContain('Не понял');
+    expect(bot.lastText()).not.toContain('Что хотите получить');
   });
 });
 

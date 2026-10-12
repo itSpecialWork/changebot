@@ -151,12 +151,14 @@ const BOT_INFO = { id: 1, is_bot: true, first_name: 'Test', username: 'test_bot'
 
 export interface BotHarnessOptions {
   readonly privateTransfer?: PrivateTransferProvider;
+  /** Свой каталог мока. По умолчанию — валюты и курсы из MockExchangeProvider. */
+  readonly provider?: MockExchangeProvider;
 }
 
 export class BotHarness {
   readonly exchangeRepository = new InMemoryExchangeRepository();
   readonly userRepository = new InMemoryUserRepository();
-  readonly provider = new MockExchangeProvider();
+  readonly provider: MockExchangeProvider;
   readonly privateTransfer: PrivateTransferProvider | undefined;
   readonly calls: ApiCall[] = [];
   readonly bot: Bot<BotContext>;
@@ -165,6 +167,7 @@ export class BotHarness {
 
   private constructor(options: BotHarnessOptions = {}) {
     const logger = createLogger({ nodeEnv: 'test', logLevel: 'silent' });
+    this.provider = options.provider ?? new MockExchangeProvider();
     this.privateTransfer = options.privateTransfer;
     this.exchanges = new ExchangeService({
       repository: this.exchangeRepository,
