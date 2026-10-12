@@ -128,6 +128,27 @@ export class InMemoryExchangeRepository implements ExchangeRepository {
     return Promise.resolve([]);
   }
 
+  claimDueBeforeProvider(params: ClaimDueParams): Promise<string[]> {
+    if (params.statuses.length === 0 || params.limit <= 0) return Promise.resolve([]);
+    const due = [...this.rows.values()]
+      .filter(
+        (row) =>
+          params.statuses.includes(row.status) &&
+          row.provider === params.provider &&
+          row.providerExchangeId === null &&
+          row.nextCheckAt !== null &&
+          row.nextCheckAt.getTime() <= params.now.getTime(),
+      )
+      .sort(
+        (left, right) => (left.nextCheckAt?.getTime() ?? 0) - (right.nextCheckAt?.getTime() ?? 0),
+      )
+      .slice(0, params.limit);
+    for (const row of due) {
+      this.rows.set(row.id, { ...row, nextCheckAt: params.leaseUntil, updatedAt: params.now });
+    }
+    return Promise.resolve(due.map((row) => row.id));
+  }
+
   private require(exchangeId: string, expected: ExchangeRecord['status']): ExchangeRecord {
     const row = this.rows.get(exchangeId);
     if (row?.status !== expected) {
@@ -164,6 +185,11 @@ export interface BotHarnessOptions {
   readonly privateTransfer?: PrivateTransferProvider;
   /** Свой каталог мока. По умолчанию — валюты и курсы из MockExchangeProvider. */
   readonly provider?: MockExchangeProvider;
+  /**
+   * false — как живой бот: без демо-кнопки и с проверкой формы адреса.
+   * По умолчанию true, чтобы старые сценарии шли со строкой mock-payout-address-1.
+   */
+  readonly demo?: boolean;
 }
 
 export class BotHarness {
@@ -188,28 +214,33 @@ export class BotHarness {
       ...(this.privateTransfer ? { privateTransfer: this.privateTransfer } : {}),
     });
     const transfer = this.privateTransfer;
+    const demoEnabled = options.demo !== false;
     this.bot = createBot({
       token: '123456:TEST_TOKEN_FOR_UNIT_TESTS_ONLY_0000000',
       exchanges: this.exchanges,
       users: new UserService(this.userRepository),
       logger,
-      demo: {
-        advanceProviderStatus: (id) => {
-          try {
-            this.provider.advanceStatus(id);
-          } catch (error) {
-            if (
-              transfer instanceof MockPrivateTransferProvider &&
-              error instanceof ExchangeProviderError &&
-              error.code === 'NOT_FOUND'
-            ) {
-              transfer.advanceStatus(id);
-              return;
-            }
-            throw error;
+      ...(demoEnabled
+        ? {
+            demo: {
+              advanceProviderStatus: (id: string) => {
+                try {
+                  this.provider.advanceStatus(id);
+                } catch (error) {
+                  if (
+                    transfer instanceof MockPrivateTransferProvider &&
+                    error instanceof ExchangeProviderError &&
+                    error.code === 'NOT_FOUND'
+                  ) {
+                    transfer.advanceStatus(id);
+                    return;
+                  }
+                  throw error;
+                }
+              },
+            },
           }
-        },
-      },
+        : {}),
       rateLimit: { limit: 10_000, windowMs: 1000 },
     });
 

@@ -302,6 +302,56 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
         QuoteExpiredError,
       );
     });
+
+    it('worker сам закрывает неподтверждённую котировку', async () => {
+      const user = await createTestUser(prisma);
+      const exchange = await awaitingConfirmation(user.id);
+
+      now = new Date(START.getTime() + 5 * MINUTE);
+      for (let pass = 0; pass < 20; pass += 1) {
+        const current = await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+        if (current.status === 'EXPIRED') break;
+        await service.pollDueExchanges(100);
+      }
+
+      const stored = await prisma.exchange.findUniqueOrThrow({ where: { id: exchange.id } });
+      expect(stored.status).toBe('EXPIRED');
+      expect(stored.nextCheckAt).toBeNull();
+      expect((await history(exchange.id)).at(-1)?.reason).toBe('quote_expired');
+      const notes = await prisma.notificationOutbox.findMany({
+        where: { exchangeId: exchange.id },
+      });
+      expect(notes).toHaveLength(1);
+      expect(JSON.stringify(notes[0]?.payload)).not.toContain('test-payout-address');
+    });
+
+    it('поздняя отмена пишет quote_expired и не ставит уведомление', async () => {
+      const user = await createTestUser(prisma);
+      const exchange = await awaitingConfirmation(user.id);
+
+      now = new Date(START.getTime() + 5 * MINUTE);
+      await service.cancelByUser(user.id, exchange.id);
+
+      expect((await history(exchange.id)).at(-1)?.reason).toBe('quote_expired');
+      expect(await prisma.notificationOutbox.count({ where: { exchangeId: exchange.id } })).toBe(0);
+    });
+
+    it('черновик без котировки закрывается по своему сроку без уведомления', async () => {
+      const user = await createTestUser(prisma);
+      const draft = await service.createDraft(draftInput(user.id));
+
+      now = new Date(START.getTime() + 30 * MINUTE);
+      for (let pass = 0; pass < 20; pass += 1) {
+        const current = await prisma.exchange.findUniqueOrThrow({ where: { id: draft.id } });
+        if (current.status === 'EXPIRED') break;
+        await service.pollDueExchanges(100);
+      }
+
+      const stored = await prisma.exchange.findUniqueOrThrow({ where: { id: draft.id } });
+      expect(stored.status).toBe('EXPIRED');
+      expect((await history(draft.id)).at(-1)?.reason).toBe('draft_expired');
+      expect(await prisma.notificationOutbox.count({ where: { exchangeId: draft.id } })).toBe(0);
+    });
   });
 
   describe('исходы createExchange у провайдера', () => {

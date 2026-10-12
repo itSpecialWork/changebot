@@ -438,15 +438,19 @@ export class ExchangeService {
   }
 
   /**
-   * Отмена пользователем до создания обмена у провайдера. Закрывает обмен статусом
-   * EXPIRED с причиной user_cancelled (отдельного статуса «отменён» в модели нет).
+   * Отмена пользователем до создания обмена у провайдера.
+   * Отдельного статуса «отменён» нет: оба исхода — EXPIRED.
+   * Если срок котировки или черновика уже прошёл, причина quote_expired или
+   * draft_expired. user_cancelled остаётся только пока срок ещё жив.
+   * Уведомление не ставится: карточку пользователь видит в этом же диалоге.
    */
   async cancelByUser(userId: string, exchangeId: string): Promise<ExchangeRecord> {
     const exchange = await this.loadOwned(userId, exchangeId);
     if (!CANCELLABLE_STATUSES.includes(exchange.status)) {
       throw new ExchangeNotCancellableError(exchange.id, exchange.status);
     }
-    return this.move(exchange, 'EXPIRED', 'user_cancelled', { nextCheckAt: null });
+    const reason = this.expiryReason(exchange, { claimed: false }) ?? 'user_cancelled';
+    return this.move(exchange, 'EXPIRED', reason, { nextCheckAt: null });
   }
 
   /** DRAFT → QUOTED: запрашивает котировку у провайдера. */
@@ -638,14 +642,30 @@ export class ExchangeService {
   }
 
   /**
-   * Один проход фонового опроса: захватывает до `limit` созревших обменов и
-   * сверяет каждый с провайдером. Обмены обрабатываются параллельно, ошибка одного
-   * не влияет на остальные.
+   * Один проход фонового опроса.
+   *
+   * Сначала закрывает обмены, которых у провайдера ещё нет и чей nextCheckAt
+   * уже прошёл: DRAFT, QUOTED, AWAITING_CONFIRMATION → EXPIRED. WAITING_DEPOSIT
+   * и дальше сюда не входят: живой обмен у провайдера своими часами не закрываем.
+   * Затем захватывает до `limit` созревших обменов с id провайдера и сверяет
+   * каждый. Ошибка одного не влияет на остальные.
    *
    * Lease (nextCheckAt) покрывает вызов провайдера с запасом. Если проверка
    * не завершилась, обмен вернётся в работу после истечения lease.
    */
   async pollDueExchanges(limit: number): Promise<PollSummary> {
+    const expired = await this.expireDueBeforeProvider(limit);
+    const polled = await this.pollProviderExchanges(limit);
+    return {
+      claimed: expired.claimed + polled.claimed,
+      transitioned: expired.transitioned + polled.transitioned,
+      unchanged: expired.unchanged + polled.unchanged,
+      deferred: polled.deferred,
+      errors: expired.errors + polled.errors,
+    };
+  }
+
+  private async pollProviderExchanges(limit: number): Promise<PollSummary> {
     const now = this.now();
     const ids = await this.repository.claimDueForProviderCheck({
       now,
@@ -675,6 +695,59 @@ export class ExchangeService {
       }
     });
     return { claimed: ids.length, transitioned, unchanged, deferred, errors };
+  }
+
+  /**
+   * Закрывает просроченные обмены до провайдера. Захват сдвигает nextCheckAt,
+   * поэтому черновик после захвата закрывается по статусу, а котировка — по
+   * quoteExpiresAt, который захват не трогает.
+   * О котировке пишем в чат: пользователя в диалоге уже нет. Черновик молча:
+   * карточку подтверждения он ещё не видел.
+   */
+  private async expireDueBeforeProvider(limit: number): Promise<PollSummary> {
+    const now = this.now();
+    const ids = await this.repository.claimDueBeforeProvider({
+      now,
+      limit,
+      statuses: CANCELLABLE_STATUSES,
+      provider: this.providerKind,
+      leaseUntil: new Date(now.getTime() + this.config.providerTimeoutMs * 2),
+    });
+
+    let transitioned = 0;
+    let unchanged = 0;
+    let errors = 0;
+    for (const exchangeId of ids) {
+      try {
+        const exchange = await this.repository.findById(exchangeId);
+        if (!exchange) {
+          unchanged += 1;
+          continue;
+        }
+        const reason = this.expiryReason(exchange, { claimed: true });
+        if (reason === null) {
+          unchanged += 1;
+          continue;
+        }
+        const notification =
+          reason === 'quote_expired'
+            ? buildExchangeStatusNotification(exchange, 'EXPIRED')
+            : undefined;
+        await this.move(exchange, 'EXPIRED', reason, {
+          nextCheckAt: null,
+          ...(notification ? { notification } : {}),
+        });
+        transitioned += 1;
+      } catch (error) {
+        if (error instanceof ExchangeStatusConflictError) {
+          unchanged += 1;
+          continue;
+        }
+        errors += 1;
+        this.logger.error({ exchangeId, err: error }, 'Unexpected error while expiring exchange');
+      }
+    }
+    return { claimed: ids.length, transitioned, unchanged, deferred: 0, errors };
   }
 
   // --- Внутренняя логика --------------------------------------------------------
@@ -859,6 +932,27 @@ export class ExchangeService {
       await this.move(exchange, 'EXPIRED', 'quote_expired', { nextCheckAt: null });
       throw new QuoteExpiredError(exchange.id);
     }
+  }
+
+  /**
+   * Причина закрытия, если срок уже прошёл. null — срок ещё жив.
+   * После захвата worker-ом nextCheckAt сдвинут вперёд, поэтому для черновика
+   * факт захвата и есть доказательство срока. Котировка смотрит на quoteExpiresAt.
+   */
+  private expiryReason(
+    exchange: ExchangeRecord,
+    options: { readonly claimed: boolean },
+  ): 'draft_expired' | 'quote_expired' | null {
+    if (exchange.status === 'DRAFT') {
+      if (options.claimed) return 'draft_expired';
+      const deadline = exchange.nextCheckAt;
+      return deadline !== null && deadline.getTime() <= this.now().getTime()
+        ? 'draft_expired'
+        : null;
+    }
+    if (exchange.status !== 'QUOTED' && exchange.status !== 'AWAITING_CONFIRMATION') return null;
+    const deadline = exchange.quoteExpiresAt;
+    return deadline !== null && deadline.getTime() <= this.now().getTime() ? 'quote_expired' : null;
   }
 
   private async move(

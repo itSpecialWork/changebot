@@ -3,7 +3,8 @@
  *
  * Отвечает только за расписание: запускает проходы по таймеру, не допускает
  * перекрытия проходов и корректно останавливается. Вся логика проверки находится
- * в application-слое (ExchangeService.pollDueExchanges).
+ * в application-слое (ExchangeService.pollDueExchanges): срок до провайдера
+ * и сверка уже созданного обмена.
  */
 import type { PollSummary } from '../application/exchanges/exchange-service.js';
 import type { Logger } from '../observability/logger.js';

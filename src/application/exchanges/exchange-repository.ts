@@ -133,4 +133,11 @@ export interface ExchangeRepository {
    * истекает, и обмен будет проверен снова. Возвращает идентификаторы обменов.
    */
   claimDueForProviderCheck(params: ClaimDueParams): Promise<string[]>;
+
+  /**
+   * То же для обменов, которых у провайдера ещё нет: DRAFT, QUOTED и
+   * AWAITING_CONFIRMATION. Строка с providerExchangeId не берётся.
+   * Срок уже лежит в nextCheckAt, отдельный статус для простоя не нужен.
+   */
+  claimDueBeforeProvider(params: ClaimDueParams): Promise<string[]>;
 }

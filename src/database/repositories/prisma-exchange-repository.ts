@@ -214,6 +214,26 @@ export class PrismaExchangeRepository implements ExchangeRepository {
     return rows.map((row) => row.id);
   }
 
+  async claimDueBeforeProvider(params: ClaimDueParams): Promise<string[]> {
+    if (params.statuses.length === 0 || params.limit <= 0) return [];
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      UPDATE exchanges
+      SET next_check_at = ${params.leaseUntil}::timestamptz,
+          updated_at = ${params.now}::timestamptz
+      WHERE id IN (
+        SELECT id FROM exchanges
+        WHERE status = ANY(${[...params.statuses]}::text[]::exchange_status[])
+          AND provider = ${params.provider}::text::exchange_provider
+          AND provider_exchange_id IS NULL
+          AND next_check_at <= ${params.now}::timestamptz
+        ORDER BY next_check_at ASC
+        LIMIT ${params.limit}::int
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id::text AS id`;
+    return rows.map((row) => row.id);
+  }
+
   /** Обновление без смены статуса: тоже compare-and-set, истории не пишет. */
   private async updateWithoutTransition(
     exchangeId: string,

@@ -2,7 +2,7 @@
  * Методы ExchangeService, нужные интерфейсу бота: каталог валют, предпросмотр котировки,
  * подготовка к подтверждению, список и отмена. Репозиторий в памяти, провайдер mock.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ExchangeNotCancellableError,
   ExchangeNotFoundError,
@@ -159,6 +159,109 @@ describe('cancelByUser', () => {
     await expect(service.cancelByUser('u2', created.id)).rejects.toBeInstanceOf(
       ExchangeNotFoundError,
     );
+  });
+});
+
+describe('срок без кнопки пользователя', () => {
+  const start = new Date('2026-01-01T00:00:00.000Z');
+  let now: Date;
+  let clockedRepository: InMemoryExchangeRepository;
+  let clocked: ExchangeService;
+
+  beforeEach(() => {
+    now = start;
+    clockedRepository = new InMemoryExchangeRepository();
+    clocked = new ExchangeService({
+      repository: clockedRepository,
+      provider: new MockExchangeProvider({ now: () => now }),
+      providerKind: 'MOCK',
+      logger,
+      now: () => now,
+    });
+  });
+
+  async function awaiting(): Promise<string> {
+    const created = await clocked.createDraft({
+      userId: 'u1',
+      clientRequestId: 'r1',
+      ...PAIR,
+      fromAmount: '100',
+      rateType: 'FLOATING',
+      payoutAddress: 'test-payout-address',
+    });
+    const prepared = await clocked.prepareConfirmation('u1', created.id);
+    return prepared.id;
+  }
+
+  it('по истечении котировки worker ставит EXPIRED с причиной quote_expired', async () => {
+    const id = await awaiting();
+    const transition = vi.spyOn(clockedRepository, 'transition');
+    now = new Date(start.getTime() + 5 * 60_000);
+
+    const summary = await clocked.pollDueExchanges(10);
+
+    expect(summary.transitioned).toBe(1);
+    expect(clockedRepository.rows.get(id)?.status).toBe('EXPIRED');
+    expect(clockedRepository.rows.get(id)?.nextCheckAt).toBeNull();
+    expect(transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exchangeId: id,
+        from: 'AWAITING_CONFIRMATION',
+        to: 'EXPIRED',
+        reason: 'quote_expired',
+        notification: expect.objectContaining({ type: 'EXCHANGE_STATUS_CHANGED' }) as object,
+      }),
+    );
+  });
+
+  it('до срока отмена остаётся user_cancelled и без уведомления', async () => {
+    const id = await awaiting();
+    const transition = vi.spyOn(clockedRepository, 'transition');
+
+    await clocked.cancelByUser('u1', id);
+
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({ reason: 'user_cancelled' }));
+    expect(transition.mock.calls[0]?.[0]).not.toHaveProperty('notification');
+  });
+
+  it('отмена после срока пишет quote_expired, а не user_cancelled', async () => {
+    const id = await awaiting();
+    const transition = vi.spyOn(clockedRepository, 'transition');
+    now = new Date(start.getTime() + 5 * 60_000);
+
+    await clocked.cancelByUser('u1', id);
+
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({ reason: 'quote_expired' }));
+    expect(transition.mock.calls[0]?.[0]).not.toHaveProperty('notification');
+  });
+
+  it('черновик без котировки закрывается по своему сроку и молча', async () => {
+    const created = await clocked.createDraft({
+      userId: 'u1',
+      clientRequestId: 'r1',
+      ...PAIR,
+      fromAmount: '100',
+      rateType: 'FLOATING',
+      payoutAddress: 'test-payout-address',
+    });
+    const transition = vi.spyOn(clockedRepository, 'transition');
+    now = new Date(start.getTime() + 30 * 60_000);
+
+    await clocked.pollDueExchanges(10);
+
+    expect(clockedRepository.rows.get(created.id)?.status).toBe('EXPIRED');
+    expect(transition).toHaveBeenCalledWith(expect.objectContaining({ reason: 'draft_expired' }));
+    expect(transition.mock.calls[0]?.[0]).not.toHaveProperty('notification');
+  });
+
+  it('ожидание депозита своими часами не закрывает', async () => {
+    const id = await awaiting();
+    await clocked.confirmAndCreate('u1', id);
+    now = new Date(start.getTime() + 30 * 60_000);
+
+    await clocked.pollDueExchanges(10);
+
+    expect(clockedRepository.rows.get(id)?.status).toBe('WAITING_DEPOSIT');
   });
 });
 
