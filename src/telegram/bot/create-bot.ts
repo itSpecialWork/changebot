@@ -74,6 +74,11 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return newExchange.start(ctx);
       case 'list':
         return exchanges.list(ctx);
+      case 'resume_address':
+        return newExchange.resumeAddress(ctx);
+      case 'drop_address':
+        await newExchange.dropAddressWait(ctx);
+        return exchanges.list(ctx);
       case 'from':
         return newExchange.selectFrom(ctx, action.ticker, action.network);
       case 'to':

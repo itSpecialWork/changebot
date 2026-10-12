@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_MOCK_CURRENCIES,
+  DEFAULT_MOCK_RATES,
   MockExchangeProvider,
 } from '../../../src/integrations/mock/mock-exchange-provider.js';
 import type { ProviderCurrency } from '../../../src/domain/exchanges/exchange-provider.js';
@@ -252,6 +253,39 @@ describe('бот: создание обмена', () => {
     expect(bot.exchangeRepository.rows.size).toBe(0);
   });
 
+  it('живой режим не принимает мусор вместо адреса SOL и пропускает похожую форму', async () => {
+    const sol: ProviderCurrency = {
+      ticker: 'sol',
+      network: 'sol',
+      name: 'Solana',
+      extraId: 'none',
+      supportsFixedRate: true,
+      featured: false,
+    };
+    const live = await BotHarness.create({
+      demo: false,
+      provider: new MockExchangeProvider({
+        currencies: [...DEFAULT_MOCK_CURRENCIES, sol],
+        rates: { ...DEFAULT_MOCK_RATES, 'usdt:trx>sol:sol': '0.006' },
+      }),
+    });
+
+    await live.pressButton(USER, 'm:new');
+    await live.pressButton(USER, 'f:usdt:trx');
+    await live.pressButton(USER, 't:sol:sol');
+    await live.sendText(USER, '20');
+    await live.sendText(USER, 'jhghghhghgfgdgdgdg');
+
+    expect(live.lastText()).toContain('не похож на кошелёк');
+    expect(live.lastText()).toContain('SOL');
+    expect(live.exchangeRepository.rows.size).toBe(0);
+
+    await live.sendText(USER, 'So11111111111111111111111111111111111111112');
+    expect(live.lastText()).toContain('Адрес получения');
+    expect(live.lastText()).toContain('So11111111111111111111111111111111111111112');
+    expect(live.exchangeRepository.rows.size).toBe(1);
+  });
+
   it('неподдерживаемая пара сообщается на шаге суммы, черновик не создаётся', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'u:a');
@@ -294,6 +328,14 @@ describe('бот: создание обмена', () => {
 });
 
 describe('бот: мои обмены', () => {
+  async function reachAddress(): Promise<void> {
+    await bot.pressButton(USER, 'm:new');
+    await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 'u:a');
+    await bot.pressButton(USER, 't:btc:btc');
+    await bot.sendText(USER, '100');
+  }
+
   it('показывает список и карточку, чужой обмен недоступен', async () => {
     const confirm = await reachConfirmation();
     const exchangeId = confirm.slice(2);
@@ -308,6 +350,45 @@ describe('бот: мои обмены', () => {
     expect(bot.lastText()).toContain('Обмен не найден');
     await bot.pressButton(OTHER_USER, `c:${exchangeId}`);
     expect([...bot.exchangeRepository.rows.values()][0]?.status).toBe('AWAITING_CONFIRMATION');
+  });
+
+  it('на шаге адреса открывает список и предупреждает, что обмен ещё не создан', async () => {
+    const confirm = await reachConfirmation();
+    const exchangeId = confirm.slice(2);
+    await reachAddress();
+
+    await bot.pressButton(USER, 'm:list');
+
+    expect(bot.lastText()).toContain('Жду адрес, обмен ещё не создан.');
+    expect(bot.lastText()).toContain('Ваши обмены');
+    expect(bot.lastButtons()).toEqual(expect.arrayContaining([`o:${exchangeId}`, 'm:go', 'm:xa']));
+    expect(bot.exchangeRepository.rows.size).toBe(1);
+  });
+
+  it('«Продолжить» возвращает к вводу адреса и не создаёт обмен', async () => {
+    await reachAddress();
+    await bot.pressButton(USER, 'm:list');
+
+    await bot.pressButton(USER, 'm:go');
+
+    expect(bot.lastText()).toContain('Отправьте адрес кошелька');
+    expect(bot.exchangeRepository.rows.size).toBe(0);
+
+    await bot.sendText(USER, ADDRESS);
+    expect(bot.exchangeRepository.rows.size).toBe(1);
+  });
+
+  it('«Отмена» снимает ожидание адреса, список остаётся', async () => {
+    await reachAddress();
+    await bot.pressButton(USER, 'm:list');
+
+    await bot.pressButton(USER, 'm:xa');
+
+    expect(bot.lastText()).toContain('пока нет обменов');
+    expect(bot.lastText()).not.toContain('Жду адрес');
+    await bot.sendText(USER, ADDRESS);
+    expect(bot.lastText()).toContain('Не понял');
+    expect(bot.exchangeRepository.rows.size).toBe(0);
   });
 });
 
@@ -342,7 +423,7 @@ describe('бот: поиск валюты', () => {
     expect(bot.lastButtons()).not.toContain('f:usdt:trx');
 
     await bot.pressButton(USER, 'f:btc');
-    expect(bot.lastText()).toContain('Что хотите получить');
+    expect(bot.lastText()).toContain('Какую монету хотите получить');
     expect(bot.lastText()).not.toContain('Выберите сеть');
   });
 
@@ -383,7 +464,7 @@ describe('бот: поиск валюты', () => {
     );
 
     await catalog.pressButton(USER, 'f:trx:trx');
-    expect(catalog.lastText()).toContain('Что хотите получить');
+    expect(catalog.lastText()).toContain('Какую монету хотите получить');
     expect(catalog.lastText()).not.toContain('Выберите сеть');
 
     await catalog.pressButton(USER, 'm:new');
@@ -406,6 +487,9 @@ describe('бот: поиск валюты', () => {
 
   it('команда /btc выбирает монету так же, как кнопка', async () => {
     await bot.pressButton(USER, 'm:new');
+    expect(bot.lastText()).toContain('<b>Новый обмен</b>');
+    expect(bot.lastText()).toContain('<b>💸 Что вы отдаёте?</b>');
+    expect(bot.lastText()).toContain('Эту монету вы отправите на обмен.');
 
     const menu = bot.calls.find((call) => call.method === 'setMyCommands');
     const commands = menu?.payload.commands as { command: string }[] | undefined;
@@ -415,8 +499,15 @@ describe('бот: поиск валюты', () => {
     await bot.sendText(USER, '/btc');
 
     const text = bot.lastText();
+    const notice = bot
+      .messages()
+      .map((call) => String(call.payload.text))
+      .find((line) => line.includes('Вы выбрали'));
+    expect(notice).toContain('✅ Вы выбрали <b>BTC</b>.');
+    expect(notice).toContain('следующую монету');
     expect(text).toContain('<blockquote>Отдаёте\n<b>BTC</b></blockquote>');
-    expect(text).toContain('<b>Что хотите получить?</b>');
+    expect(text).toContain('<b>🪙 Какую монету хотите получить?</b>');
+    expect(text).toContain('На неё придёт обмен.');
     expect(text).toContain('Базовые пары — кнопками ниже.');
     expect(text).toContain('Нажмите «/» и введите тикер — появятся подсказки.');
     expect(text).toContain('Остальные монеты — кнопка «Все валюты».');
@@ -433,7 +524,7 @@ describe('бот: поиск валюты', () => {
     expect(resets()).toBe(0);
 
     await bot.sendText(USER, '/btc');
-    expect(bot.lastText()).toContain('Что хотите получить');
+    expect(bot.lastText()).toContain('Какую монету хотите получить');
     expect(resets()).toBe(0);
 
     await bot.pressButton(USER, 'm:menu');
@@ -458,7 +549,7 @@ describe('бот: поиск валюты', () => {
 
     await bot.sendText(USER, '/btc');
     expect(bot.lastText()).toContain('Не понял');
-    expect(bot.lastText()).not.toContain('Что хотите получить');
+    expect(bot.lastText()).not.toContain('Какую монету хотите получить');
   });
 });
 

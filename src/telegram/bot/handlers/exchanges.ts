@@ -37,15 +37,17 @@ export function createExchangeHandlers(deps: BotDependencies) {
   return {
     async list(ctx: BotContext): Promise<void> {
       const exchanges = await deps.exchanges.listForUser(ctx.appUser.id, LIST_LIMIT);
-      if (exchanges.length === 0) {
+      const pendingAddress = ctx.session.flow?.step === 'address';
+      const warning = pendingAddress ? '<b>Жду адрес, обмен ещё не создан.</b>\n\n' : '';
+      if (exchanges.length === 0 && !pendingAddress) {
         await show(ctx, 'У вас пока нет обменов.', mainMenuKeyboard());
         return;
       }
-      await show(
-        ctx,
-        '<b>Ваши обмены</b>\nПоследние обмены, новые сверху:',
-        exchangeListKeyboard(exchanges),
-      );
+      const body =
+        exchanges.length === 0
+          ? 'У вас пока нет обменов.'
+          : '<b>Ваши обмены</b>\nПоследние обмены, новые сверху:';
+      await show(ctx, `${warning}${body}`, exchangeListKeyboard(exchanges, { pendingAddress }));
     },
 
     async open(ctx: BotContext, exchangeId: string): Promise<void> {

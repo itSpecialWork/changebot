@@ -8,12 +8,14 @@ function isMessageNotModified(error: unknown): boolean {
 /**
  * Показывает экран: для нажатия на кнопку редактирует сообщение с кнопкой,
  * иначе (или если редактировать нельзя) отправляет новое сообщение.
+ * `forceNew` всегда шлёт новое сообщение под уже написанным.
  */
 export async function show(
   ctx: BotContext,
   text: string,
   keyboard?: InlineKeyboard,
   replaceMessageId?: number,
+  forceNew = false,
 ): Promise<number | undefined> {
   const other = {
     parse_mode: 'HTML',
@@ -22,7 +24,7 @@ export async function show(
   } as const;
 
   const chatId = ctx.chat?.id;
-  if (replaceMessageId !== undefined && chatId !== undefined && !ctx.callbackQuery) {
+  if (!forceNew && replaceMessageId !== undefined && chatId !== undefined && !ctx.callbackQuery) {
     try {
       await ctx.api.editMessageText(chatId, replaceMessageId, text, other);
       return replaceMessageId;
@@ -32,7 +34,7 @@ export async function show(
     }
   }
 
-  if (ctx.callbackQuery?.message) {
+  if (!forceNew && ctx.callbackQuery?.message) {
     try {
       await ctx.editMessageText(text, other);
       return ctx.callbackQuery.message.message_id;

@@ -384,11 +384,21 @@ export function skipExtraIdKeyboard(): InlineKeyboard {
     .text('❌ Отмена', callbackData.menu);
 }
 
-export function exchangeListKeyboard(exchanges: readonly ExchangeRecord[]): InlineKeyboard {
+export function exchangeListKeyboard(
+  exchanges: readonly ExchangeRecord[],
+  options?: { readonly pendingAddress?: boolean },
+): InlineKeyboard {
   const keyboard = new InlineKeyboard();
+  if (options?.pendingAddress) {
+    keyboard
+      .text('Продолжить', callbackData.resumeAddress)
+      .text('Отмена', callbackData.dropAddress);
+    if (exchanges.length > 0) keyboard.row();
+  }
   for (const exchange of exchanges) {
     keyboard.text(formatListButton(exchange), callbackData.open(exchange.id)).row();
   }
+  if (exchanges.length === 0) return keyboard;
   return keyboard
     .text('🔄 Новый обмен', callbackData.newExchange)
     .row()

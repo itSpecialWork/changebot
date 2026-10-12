@@ -12,12 +12,14 @@
  * выполняет сервис и провайдер. Состояние диалога живёт в сессии (память процесса).
  */
 import { randomUUID } from 'node:crypto';
+import { GrammyError } from 'grammy';
 import {
   ExchangeProviderError,
   type ProviderAmountRange,
   type ProviderCurrency,
   type RateType,
 } from '../../../domain/exchanges/exchange-provider.js';
+import { matchesPayoutAddressShape } from '../../../domain/exchanges/payout-address.js';
 import {
   compareDecimal,
   formatDecimal,
@@ -224,9 +226,15 @@ function currencyStepText(
     const ticker = escapeHtml((flow.pendingTicker ?? '').toUpperCase());
     lines.push(`Монета\n<b>${ticker}</b>`, '', '<b>Выберите сеть.</b>');
   } else if (step === 'from') {
-    lines.push('<b>Что вы отдаёте?</b>');
+    lines.push(
+      '<b>💸 Что вы отдаёте?</b>',
+      'Эту монету вы отправите на обмен. Выберите её кнопкой ниже.',
+    );
   } else {
-    lines.push('<b>Что хотите получить?</b>');
+    lines.push(
+      '<b>🪙 Какую монету хотите получить?</b>',
+      'На неё придёт обмен. Выберите её кнопкой ниже.',
+    );
   }
 
   const hint = currencyHint(flow, selection);
@@ -280,7 +288,43 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     return deps.exchanges.listCurrencies();
   }
 
-  async function showCurrencies(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
+  /** Отдельное сообщение: выбранная монета остаётся в чате, кнопки уезжают ниже. */
+  function chosenFromNotice(choice: CurrencyChoice): string {
+    const name = escapeHtml(label(choice));
+    return [
+      `✅ Вы выбрали <b>${name}</b>.`,
+      'Теперь выберите следующую монету — ту, которую хотите получить.',
+    ].join('\n');
+  }
+
+  async function announceFromChoice(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
+    const from = flow.from;
+    if (!from) return;
+    const text = chosenFromNotice(from);
+    const messageId = ctx.callbackQuery?.message?.message_id ?? flow.screenMessageId;
+    const chatId = ctx.chat?.id;
+    if (messageId !== undefined && chatId !== undefined) {
+      try {
+        await ctx.api.editMessageText(chatId, messageId, text, {
+          parse_mode: 'HTML',
+          link_preview_options: { is_disabled: true },
+          reply_markup: { inline_keyboard: [] },
+        });
+        delete flow.screenMessageId;
+        return;
+      } catch (error) {
+        if (!(error instanceof GrammyError)) throw error;
+      }
+    }
+    await reply(ctx, text);
+    delete flow.screenMessageId;
+  }
+
+  async function showCurrencies(
+    ctx: BotContext,
+    flow: NewExchangeFlow,
+    forceNew = false,
+  ): Promise<void> {
     if (flow.step !== 'from' && flow.step !== 'to') {
       await staleButton(ctx);
       return;
@@ -330,7 +374,8 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       ctx,
       currencyStepText(flow.step, flow, selection),
       currencyKeyboard(flow.step, selection),
-      ctx.callbackQuery ? undefined : flow.screenMessageId,
+      forceNew || ctx.callbackQuery ? undefined : flow.screenMessageId,
+      forceNew,
     );
     if (messageId !== undefined) flow.screenMessageId = messageId;
   }
@@ -519,6 +564,14 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       );
       return;
     }
+    if (!demo && !matchesPayoutAddressShape(to.network, address)) {
+      await reply(
+        ctx,
+        `Адрес не похож на кошелёк <b>${escapeHtml(label(to))}</b>. Проверьте сеть и отправьте его ещё раз.`,
+        cancelFlowKeyboard(),
+      );
+      return;
+    }
     flow.payoutAddress = address;
 
     if (to.extraId === 'none') {
@@ -591,7 +644,8 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     flow.currencyPage = 0;
     flow.currencyCatalog = 'base';
     resetTokenList(flow);
-    await showCurrencies(ctx, flow);
+    await announceFromChoice(ctx, flow);
+    await showCurrencies(ctx, flow, true);
   }
 
   async function selectTo(ctx: BotContext, ticker: string, network: string): Promise<void> {
@@ -762,6 +816,24 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       flow.currencyQuery = '';
       flow.currencyPage = 0;
       await showCurrencies(ctx, flow);
+    },
+
+    /** Снова просит адрес. Незавершённый диалог при этом не сбрасывается. */
+    async resumeAddress(ctx: BotContext): Promise<void> {
+      const flow = ctx.session.flow;
+      const to = flow?.step === 'address' ? flow.to : undefined;
+      if (!flow || !to) {
+        await staleButton(ctx);
+        return;
+      }
+      await show(ctx, payoutPrompt(label(to), demo), cancelFlowKeyboard());
+    },
+
+    /** Снимает ожидание адреса. Другой шаг диалога не трогает. */
+    async dropAddressWait(ctx: BotContext): Promise<void> {
+      if (ctx.session.flow?.step !== 'address') return;
+      ctx.session.flow = undefined;
+      await clearCurrencyCommands(ctx, deps.logger);
     },
 
     async skipExtraId(ctx: BotContext): Promise<void> {

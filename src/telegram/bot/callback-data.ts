@@ -11,6 +11,8 @@ export type CallbackAction =
   | { readonly kind: 'menu' }
   | { readonly kind: 'new' }
   | { readonly kind: 'list' }
+  | { readonly kind: 'resume_address' }
+  | { readonly kind: 'drop_address' }
   | { readonly kind: 'help' }
   | { readonly kind: 'support' }
   | { readonly kind: 'agreements' }
@@ -39,6 +41,8 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'm:menu': { kind: 'menu' },
   'm:new': { kind: 'new' },
   'm:list': { kind: 'list' },
+  'm:go': { kind: 'resume_address' },
+  'm:xa': { kind: 'drop_address' },
   'm:help': { kind: 'help' },
   'm:sup': { kind: 'support' },
   'm:agr': { kind: 'agreements' },
@@ -116,6 +120,8 @@ export const callbackData = {
   menu: 'm:menu',
   newExchange: 'm:new',
   list: 'm:list',
+  resumeAddress: 'm:go',
+  dropAddress: 'm:xa',
   help: 'm:help',
   support: 'm:sup',
   agreements: 'm:agr',

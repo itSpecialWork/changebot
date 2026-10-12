@@ -79,6 +79,8 @@ describe('callback data', () => {
       kind: 'currency_catalog',
       catalog: 'all',
     });
+    expect(parseCallbackData(callbackData.resumeAddress)).toEqual({ kind: 'resume_address' });
+    expect(parseCallbackData(callbackData.dropAddress)).toEqual({ kind: 'drop_address' });
     expect(parseCallbackData(callbackData.support)).toEqual({ kind: 'support' });
     expect(parseCallbackData(callbackData.agreements)).toEqual({ kind: 'agreements' });
     expect(parseCallbackData(callbackData.agreementUse)).toEqual({
