@@ -272,6 +272,9 @@ describe('MockExchangeProvider', () => {
         status: 'FINISHED',
         actualFromAmount: '100',
         actualToAmount: '0.0016',
+        payinHash: null,
+        payoutHash: null,
+        refundHash: null,
       });
     });
 

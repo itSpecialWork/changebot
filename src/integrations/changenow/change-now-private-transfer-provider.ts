@@ -30,6 +30,7 @@ import {
   changeNowExchangeStatusSchema,
   changeNowPrivateTransferCreatedSchema,
   changeNowPrivateTransferEstimateSchema,
+  optionalText,
 } from './schemas.js';
 
 const DEFAULT_BASE_URL = 'https://api.changenow.io';
@@ -162,6 +163,9 @@ export class ChangeNowPrivateTransferProvider implements PrivateTransferProvider
       status: mapChangeNowStatus(parsed.data.status),
       actualFromAmount: optionalAmount(parsed.data.amountFrom),
       actualToAmount: optionalAmount(parsed.data.amountTo),
+      payinHash: optionalText(parsed.data.payinHash),
+      payoutHash: optionalText(parsed.data.payoutHash),
+      refundHash: optionalText(parsed.data.refundHash),
     };
   }
 

@@ -131,6 +131,12 @@ model Exchange {
   refundAddress String? @map("refund_address")
   refundExtraId String? @map("refund_extra_id")
 
+  // Хэши транзакций. NULL, пока провайдер их не прислал. Пустая строка запрещена CHECK.
+  // Регистр и ведущие нули сохраняются. В outbox эти значения не кладутся.
+  payinHash  String? @map("payin_hash")
+  payoutHash String? @map("payout_hash")
+  refundHash String? @map("refund_hash")
+
   // Котировка.
   rateType       RateType  @map("rate_type")
   providerRateId String?   @map("provider_rate_id")

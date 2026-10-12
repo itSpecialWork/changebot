@@ -21,6 +21,7 @@ export type CallbackAction =
   | { readonly kind: 'confirm'; readonly exchangeId: string }
   | { readonly kind: 'cancel'; readonly exchangeId: string }
   | { readonly kind: 'demo'; readonly exchangeId: string }
+  | { readonly kind: 'receipt'; readonly exchangeId: string; readonly full: boolean }
   | { readonly kind: 'currency_page'; readonly direction: 'next' | 'prev' }
   | { readonly kind: 'currency_back' }
   | { readonly kind: 'currency_catalog'; readonly catalog: 'popular' | 'all' };
@@ -48,7 +49,7 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
 
 const CURRENCY_PATTERN = new RegExp(`^([ft]):(${CODE}):(${CODE})$`);
 const TICKER_PATTERN = new RegExp(`^([ft]):(${CODE})$`);
-const EXCHANGE_PATTERN = new RegExp(`^([opcxd]):(${UUID})$`);
+const EXCHANGE_PATTERN = new RegExp(`^([opcxdqk]):(${UUID})$`);
 
 const EXCHANGE_KINDS = {
   o: 'open',
@@ -56,6 +57,8 @@ const EXCHANGE_KINDS = {
   c: 'confirm',
   x: 'cancel',
   d: 'demo',
+  q: 'receipt',
+  k: 'receipt',
 } as const;
 
 const SAFE_CODE_PATTERN = new RegExp(`^${CODE}$`);
@@ -84,6 +87,7 @@ export function parseCallbackData(data: string): CallbackAction | undefined {
   if (exchange) {
     const [, prefix = '', exchangeId = ''] = exchange;
     const kind = EXCHANGE_KINDS[prefix as keyof typeof EXCHANGE_KINDS];
+    if (kind === 'receipt') return { kind, exchangeId, full: prefix === 'q' };
     return { kind, exchangeId };
   }
   return undefined;
@@ -115,6 +119,8 @@ export const callbackData = {
   confirm: (exchangeId: string): string => checked(`c:${exchangeId}`),
   cancel: (exchangeId: string): string => checked(`x:${exchangeId}`),
   demo: (exchangeId: string): string => checked(`d:${exchangeId}`),
+  receipt: (exchangeId: string): string => checked(`q:${exchangeId}`),
+  receiptBrief: (exchangeId: string): string => checked(`k:${exchangeId}`),
   currencyNext: 'u:n',
   currencyPrev: 'u:p',
   currencyBack: 'u:b',

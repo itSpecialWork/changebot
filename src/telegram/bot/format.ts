@@ -3,6 +3,7 @@
  * (адреса, memo, тикеры), экранируются.
  */
 import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
+import { isSameAsset } from '../../domain/exchanges/private-transfer-provider.js';
 import type { ExchangeStatus } from '../../domain/exchanges/status-transitions.js';
 
 export function escapeHtml(text: string): string {
@@ -91,27 +92,52 @@ export function formatListButton(exchange: ExchangeRecord): string {
 
 export interface CardOptions {
   readonly demo: boolean;
+  /** Хеши транзакций. На обычной карточке их нет: только по кнопке полной квитанции. */
+  readonly fullReceipt?: boolean;
 }
 
-/** Карточка обмена: содержимое зависит от статуса. */
+/**
+ * Заявка уже создана: одна квитанция на всё время оплаты.
+ * Пока средства не зачислены, статус остаётся «В ожидании».
+ * После зачисления та же карточка показывает «Успешно».
+ */
+const RECEIPT_STATUSES: ReadonlySet<ExchangeStatus> = new Set([
+  'WAITING_DEPOSIT',
+  'CONFIRMING',
+  'EXCHANGING',
+  'SENDING',
+  'VERIFYING',
+  'FINISHED',
+  'FAILED',
+  'REFUNDED',
+]);
+
+/** Карточка заявки: до оплаты — диалог, дальше — одна квитанция. */
 export function renderExchangeCard(exchange: ExchangeRecord, options: CardOptions): string {
   const lines: string[] = [];
   if (options.demo) lines.push(DEMO_BANNER, '');
 
+  if (RECEIPT_STATUSES.has(exchange.status)) {
+    lines.push(cardTitle(exchange), '', ...receiptLines(exchange, options.fullReceipt === true));
+    if (exchange.status === 'WAITING_DEPOSIT') {
+      lines.push('', ...depositLines(exchange));
+    } else if (exchange.status === 'FAILED') {
+      lines.push(
+        '',
+        'Если вы уже отправляли средства, обратитесь в поддержку и назовите ID из квитанции.',
+      );
+    }
+    return lines.join('\n');
+  }
+
   lines.push(
-    `<b>Обмен ${escapeHtml(formatPair(exchange))}</b>`,
+    cardTitle(exchange),
     `Статус: ${STATUS_LABELS[exchange.status]}`,
     '',
-    `Отдаёте: <b>${escapeHtml(exchange.expectedFromAmount)} ${escapeHtml(formatCurrency(exchange.fromCurrency, exchange.fromNetwork))}</b>`,
+    sentAmountLine(exchange, 'Отдаёте'),
   );
-
-  const toLabel = escapeHtml(formatCurrency(exchange.toCurrency, exchange.toNetwork));
-  if (exchange.status === 'FINISHED' && exchange.actualToAmount !== null) {
-    lines.push(`Получено: <b>${escapeHtml(exchange.actualToAmount)} ${toLabel}</b>`);
-  } else if (exchange.expectedToAmount !== null) {
-    const approx = exchange.rateType === 'FLOATING' ? '≈ ' : '';
-    lines.push(`Получите: <b>${approx}${escapeHtml(exchange.expectedToAmount)} ${toLabel}</b>`);
-  }
+  const receive = receiveAmountLine(exchange);
+  if (receive !== undefined) lines.push(receive);
   lines.push(rateLine(exchange));
 
   switch (exchange.status) {
@@ -130,15 +156,6 @@ export function renderExchangeCard(exchange: ExchangeRecord, options: CardOption
     case 'CREATING':
       lines.push('', 'Обмен создаётся у провайдера. Обновите карточку через минуту.');
       break;
-    case 'WAITING_DEPOSIT':
-      lines.push('', ...depositLines(exchange));
-      break;
-    case 'FAILED':
-      lines.push(
-        '',
-        'Если вы уже отправляли средства, обратитесь в поддержку и назовите ID обмена.',
-      );
-      break;
     default:
       break;
   }
@@ -147,7 +164,117 @@ export function renderExchangeCard(exchange: ExchangeRecord, options: CardOption
   return lines.join('\n');
 }
 
+/**
+ * Цельный блок квитанции. Цвет шрифта Bot API не задаёт:
+ * ожидание рисуется курсивом, успешное зачисление — жирным.
+ */
+function receiptLines(exchange: ExchangeRecord, fullReceipt: boolean): string[] {
+  const lines = [
+    '<blockquote><b>Квитанция</b>',
+    'Адрес получателя',
+    `<code>${escapeHtml(exchange.payoutAddress ?? '—')}</code>`,
+  ];
+  if (exchange.payoutExtraId !== null) {
+    lines.push(`Memo/Tag: <code>${escapeHtml(exchange.payoutExtraId)}</code>`);
+  }
+  lines.push('', sentAmountLine(exchange, 'Сумма'));
+  const receive = receiveAmountLine(exchange);
+  if (receive !== undefined) lines.push(receive);
+  lines.push(receiptTimingLine(exchange), `Статус: ${receiptStatusHtml(exchange.status)}`);
+  lines.push(`ID: <code>${escapeHtml(exchange.id)}</code></blockquote>`);
+  if (fullReceipt) lines.push(...proofLines(exchange));
+  return lines;
+}
+
+/**
+ * Хеш выплаты на полной квитанции. Свёрнутый блок не растягивает карточку,
+ * пока пользователь его не раскроет. Хеш депозита в текст не входит.
+ */
+function proofLines(exchange: ExchangeRecord): string[] {
+  const lines: string[] = [];
+  appendCollapsedHash(lines, 'Хэш выплаты', exchange.payoutHash);
+  appendCollapsedHash(lines, 'Хэш возврата', exchange.refundHash);
+  return lines;
+}
+
+function appendCollapsedHash(lines: string[], label: string, value: string | null): void {
+  if (value === null) return;
+  lines.push('', `<blockquote expandable>${label}\n<code>${escapeHtml(value)}</code></blockquote>`);
+}
+
+/** Есть что показать по кнопке полной квитанции. Хеш депозита для этого не считается. */
+export function hasReceiptProof(
+  exchange: Pick<ExchangeRecord, 'payoutHash' | 'refundHash'>,
+): boolean {
+  return exchange.payoutHash !== null || exchange.refundHash !== null;
+}
+
+function receiptStatusHtml(status: ExchangeStatus): string {
+  switch (status) {
+    case 'FINISHED':
+      return '<b>Успешно</b>';
+    case 'FAILED':
+      return 'Не удался';
+    case 'REFUNDED':
+      return 'Средства возвращены';
+    default:
+      return '<i>В ожидании</i>';
+  }
+}
+
+function sentAmountLine(exchange: ExchangeRecord, label: string): string {
+  const amount = exchange.actualFromAmount ?? exchange.expectedFromAmount;
+  const asset = escapeHtml(formatCurrency(exchange.fromCurrency, exchange.fromNetwork));
+  return `${label}: <b>${escapeHtml(amount)} ${asset}</b>`;
+}
+
+function receiveAmountLine(exchange: ExchangeRecord): string | undefined {
+  const toLabel = escapeHtml(formatCurrency(exchange.toCurrency, exchange.toNetwork));
+  if (exchange.status === 'FINISHED' && exchange.actualToAmount !== null) {
+    return `Получено: <b>${escapeHtml(exchange.actualToAmount)} ${toLabel}</b>`;
+  }
+  if (exchange.expectedToAmount !== null) {
+    const approx = exchange.rateType === 'FLOATING' ? '≈ ' : '';
+    return `Получите: <b>${approx}${escapeHtml(exchange.expectedToAmount)} ${toLabel}</b>`;
+  }
+  return undefined;
+}
+
+function isTransfer(exchange: ExchangeRecord): boolean {
+  return isSameAsset(
+    exchange.fromCurrency,
+    exchange.fromNetwork,
+    exchange.toCurrency,
+    exchange.toNetwork,
+  );
+}
+
+function cardTitle(exchange: ExchangeRecord): string {
+  if (isTransfer(exchange)) {
+    const asset = escapeHtml(formatCurrency(exchange.fromCurrency, exchange.fromNetwork));
+    return `<b>Перевод ${asset}</b>`;
+  }
+  return `<b>Обмен ${escapeHtml(formatPair(exchange))}</b>`;
+}
+
+/**
+ * На успешном чеке срок котировки уже ни о чём не говорит.
+ * Время — момент, когда заявка перешла в «Успешно».
+ */
+function receiptTimingLine(exchange: ExchangeRecord): string {
+  if (exchange.status === 'FINISHED' && exchange.statusChangedAt instanceof Date) {
+    return `Время отправки: ${formatTime(exchange.statusChangedAt)}`;
+  }
+  return rateLine(exchange);
+}
+
 function rateLine(exchange: ExchangeRecord): string {
+  if (isTransfer(exchange)) {
+    const until = exchange.quoteExpiresAt
+      ? ` Суммы действуют до ${formatTime(exchange.quoteExpiresAt)}.`
+      : '';
+    return `Без конвертации.${until}`;
+  }
   if (exchange.rateType === 'FIXED') {
     const until = exchange.quoteExpiresAt
       ? `, действует до ${formatTime(exchange.quoteExpiresAt)}`
@@ -177,7 +304,12 @@ function depositLines(exchange: ExchangeRecord): string[] {
   if (exchange.payinExtraId !== null) {
     lines.push(`Memo/Tag (обязательно): <code>${escapeHtml(exchange.payinExtraId)}</code>`);
   }
-  lines.push('', 'Мы сообщим, когда средства поступят и обмен продвинется дальше.');
+  lines.push(
+    '',
+    isTransfer(exchange)
+      ? 'Мы сообщим, когда средства поступят и перевод продвинется дальше.'
+      : 'Мы сообщим, когда средства поступят и обмен продвинется дальше.',
+  );
   return lines;
 }
 

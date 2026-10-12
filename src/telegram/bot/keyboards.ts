@@ -4,7 +4,7 @@ import type { ProviderCurrency } from '../../domain/exchanges/exchange-provider.
 import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
 import type { CurrencyStage, NetworkScope } from './context.js';
-import { formatListButton, networkLabel } from './format.js';
+import { formatListButton, hasReceiptProof, networkLabel } from './format.js';
 
 /** Сколько валют помещается на страницу полного каталога. */
 export const CURRENCY_PAGE_SIZE = 48;
@@ -333,6 +333,8 @@ export function exchangeListKeyboard(exchanges: readonly ExchangeRecord[]): Inli
 export interface CardKeyboardOptions {
   /** Показывать кнопку продвижения тестового провайдера. */
   readonly demo: boolean;
+  /** Карточка уже открыта полной квитанцией: кнопка сворачивает хеш. */
+  readonly fullReceipt?: boolean;
 }
 
 export function exchangeCardKeyboard(
@@ -360,6 +362,14 @@ export function exchangeCardKeyboard(
         if (options.demo && exchange.providerExchangeId !== null) {
           keyboard.row().text('⏩ Демо: следующий статус', callbackData.demo(id));
         }
+      }
+      if (hasReceiptProof(exchange)) {
+        keyboard
+          .row()
+          .text(
+            options.fullReceipt ? 'Свернуть квитанцию' : 'Полная квитанция оплаты',
+            options.fullReceipt ? callbackData.receiptBrief(id) : callbackData.receipt(id),
+          );
       }
   }
   return keyboard

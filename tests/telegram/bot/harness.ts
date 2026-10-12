@@ -56,6 +56,9 @@ export class InMemoryExchangeRepository implements ExchangeRepository {
       payoutExtraId: draft.payoutExtraId,
       refundAddress: draft.refundAddress,
       refundExtraId: draft.refundExtraId,
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
       rateType: draft.rateType,
       providerRateId: null,
       quoteExpiresAt: null,
@@ -108,7 +111,15 @@ export class InMemoryExchangeRepository implements ExchangeRepository {
 
   recordCheckSuccess(params: CheckSuccessParams): Promise<ExchangeRecord> {
     const row = this.require(params.exchangeId, params.expectedStatus);
-    const updated = { ...row, checkFailureCount: 0, nextCheckAt: params.nextCheckAt };
+    const updated = {
+      ...row,
+      checkFailureCount: 0,
+      nextCheckAt: params.nextCheckAt,
+      providerStatus: params.providerStatus,
+      ...(params.payinHash !== undefined ? { payinHash: params.payinHash } : {}),
+      ...(params.payoutHash !== undefined ? { payoutHash: params.payoutHash } : {}),
+      ...(params.refundHash !== undefined ? { refundHash: params.refundHash } : {}),
+    };
     this.rows.set(row.id, updated);
     return Promise.resolve(updated);
   }

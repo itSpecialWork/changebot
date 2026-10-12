@@ -34,6 +34,12 @@ export interface ExchangeRecord {
   readonly payoutExtraId: string | null;
   readonly refundAddress: string | null;
   readonly refundExtraId: string | null;
+  /** Хэш входящей транзакции. NULL, пока провайдер его не прислал. */
+  readonly payinHash: string | null;
+  /** Хэш выплаты на адрес получателя. */
+  readonly payoutHash: string | null;
+  /** Хэш возврата, если провайдер вернул средства. */
+  readonly refundHash: string | null;
 
   readonly rateType: RateType;
   readonly providerRateId: string | null;

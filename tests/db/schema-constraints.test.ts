@@ -175,6 +175,19 @@ describe.skipIf(!testDatabaseUrl)('схема БД: ограничения', () 
       expect(created.payinExtraId).toBe('0012345678');
     });
 
+    it('пустой хэш запрещён, ведущие нули в хэше сохраняются', async () => {
+      const user = await createUser();
+      await expectCheckViolation(
+        prisma.exchange.create({ data: waitingDepositData(user.id, { payinHash: '' }) }),
+        'exchanges_optional_text_check',
+      );
+      const created = await prisma.exchange.create({
+        data: waitingDepositData(user.id, { payoutHash: '00abc' }),
+      });
+      expect(created.payoutHash).toBe('00abc');
+      expect(created.payinHash).toBeNull();
+    });
+
     it('пустые адрес и extraId запрещены', async () => {
       const user = await createUser();
       await expectCheckViolation(

@@ -271,6 +271,9 @@ export class MockPrivateTransferProvider implements PrivateTransferProvider {
       status: RAW_STATUS_TO_INTERNAL[transfer.providerStatus] ?? 'VERIFYING',
       actualFromAmount: transfer.actualFromAmount,
       actualToAmount: transfer.actualToAmount,
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
     };
   }
 }

@@ -49,6 +49,10 @@ export interface ExchangePatch {
   readonly payinExtraId?: string | null;
   readonly providerStatus?: string;
   readonly lastCheckedAt?: Date;
+  /** Пишется, только когда провайдер прислал хэш. Отсутствие поля уже записанный хэш не стирает. */
+  readonly payinHash?: string;
+  readonly payoutHash?: string;
+  readonly refundHash?: string;
 }
 
 export interface TransitionParams {
@@ -82,6 +86,9 @@ export interface CheckSuccessParams {
   readonly at: Date;
   readonly nextCheckAt: Date;
   readonly providerStatus: string;
+  readonly payinHash?: string;
+  readonly payoutHash?: string;
+  readonly refundHash?: string;
 }
 
 export interface ClaimDueParams {

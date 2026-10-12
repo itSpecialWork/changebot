@@ -35,6 +35,9 @@ function exchange(status: ExchangeStatus): ExchangeRecord {
     payoutExtraId: 'SECRET-PAYOUT-MEMO',
     refundAddress: 'SECRET-REFUND-ADDRESS',
     refundExtraId: null,
+    payinHash: 'SECRET-PAYIN-HASH',
+    payoutHash: 'SECRET-PAYOUT-HASH',
+    refundHash: null,
     rateType: 'FLOATING',
     providerRateId: null,
     quoteExpiresAt: null,
@@ -71,7 +74,7 @@ describe('buildExchangeStatusNotification', () => {
     },
   );
 
-  it('не кладёт адреса и memo в payload', () => {
+  it('не кладёт адреса, memo и хэши в payload', () => {
     for (const status of EXCHANGE_STATUSES) {
       const draft = buildExchangeStatusNotification(exchange('WAITING_DEPOSIT'), status);
       expect(JSON.stringify(draft ?? {})).not.toContain('SECRET');

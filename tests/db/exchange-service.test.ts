@@ -100,6 +100,9 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
         status: 'WAITING_DEPOSIT',
         actualFromAmount: null,
         actualToAmount: null,
+        payinHash: null,
+        payoutHash: null,
+        refundHash: null,
         ...overrides,
       }),
     );
@@ -371,6 +374,9 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
       expect(finished.exchange).toMatchObject({
         status: 'FINISHED',
         providerStatus: 'finished',
+        payinHash: null,
+        payoutHash: null,
+        refundHash: null,
         actualFromAmount: '100',
         actualToAmount: '0.0016',
         nextCheckAt: null,
@@ -383,6 +389,28 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
         ['EXCHANGING', 'SENDING', 'provider_status_changed'],
         ['SENDING', 'FINISHED', 'provider_status_changed'],
       ]);
+    });
+
+    it('сохраняет присланный хэш и без смены статуса, в уведомление его не кладёт', async () => {
+      const user = await createTestUser(prisma);
+      const exchange = await waitingDeposit(user.id);
+      const payinHash = '00payinhash';
+      const payoutHash = 'payout-hash';
+
+      mockRemoteStatus({ providerStatus: 'confirming', status: 'CONFIRMING', payinHash });
+      const moved = await service.syncWithProvider(exchange.id);
+      expect(moved.exchange).toMatchObject({ status: 'CONFIRMING', payinHash, payoutHash: null });
+
+      const note = await prisma.notificationOutbox.findFirstOrThrow({
+        where: { exchangeId: exchange.id },
+      });
+      expect(JSON.stringify(note.payload)).not.toContain(payinHash);
+
+      mockRemoteStatus({ providerStatus: 'confirming', status: 'CONFIRMING', payoutHash });
+      const same = await service.syncWithProvider(exchange.id);
+      expect(same.outcome).toBe('unchanged');
+      expect(same.exchange).toMatchObject({ payinHash, payoutHash, refundHash: null });
+      expect(await prisma.notificationOutbox.count({ where: { exchangeId: exchange.id } })).toBe(1);
     });
 
     it('допускает пропуск промежуточных статусов', async () => {

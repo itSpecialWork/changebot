@@ -43,6 +43,9 @@ function toRecord(row: Exchange): ExchangeRecord {
     payoutExtraId: row.payoutExtraId,
     refundAddress: row.refundAddress,
     refundExtraId: row.refundExtraId,
+    payinHash: row.payinHash,
+    payoutHash: row.payoutHash,
+    refundHash: row.refundHash,
     rateType: row.rateType,
     providerRateId: row.providerRateId,
     quoteExpiresAt: row.quoteExpiresAt,
@@ -183,6 +186,9 @@ export class PrismaExchangeRepository implements ExchangeRepository {
       lastCheckedAt: params.at,
       nextCheckAt: params.nextCheckAt,
       providerStatus: params.providerStatus,
+      ...(params.payinHash !== undefined ? { payinHash: params.payinHash } : {}),
+      ...(params.payoutHash !== undefined ? { payoutHash: params.payoutHash } : {}),
+      ...(params.refundHash !== undefined ? { refundHash: params.refundHash } : {}),
     });
   }
 

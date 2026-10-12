@@ -114,6 +114,12 @@ export interface ProviderExchangeStatus {
   readonly status: ProviderExchangeStatusName;
   readonly actualFromAmount: string | null;
   readonly actualToAmount: string | null;
+  /** Хэш депозита. NULL, если провайдер его ещё не знает. */
+  readonly payinHash: string | null;
+  /** Хэш выплаты. */
+  readonly payoutHash: string | null;
+  /** Хэш возврата. */
+  readonly refundHash: string | null;
 }
 
 export interface ProviderCallOptions {

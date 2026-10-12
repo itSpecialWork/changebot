@@ -300,7 +300,24 @@ describe('ChangeNowExchangeProvider', () => {
       status: 'FINISHED',
       actualFromAmount: '0.013',
       actualToAmount: '7.41109355',
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
     });
+  });
+
+  it('читает хэши транзакций и пустую строку считает отсутствием', async () => {
+    const body = fixture('status-finished.json').replace(
+      '"refundExtraId": null',
+      '"refundExtraId": null, "payinHash": " 00aa", "payoutHash": "", "refundHash": null',
+    );
+    const { provider } = createHarness(() => jsonResponse(200, body));
+
+    const status = await provider.getExchangeStatus('81cc9c3a9157a6');
+
+    expect(status.payinHash).toBe('00aa');
+    expect(status.payoutHash).toBeNull();
+    expect(status.refundHash).toBeNull();
   });
 
   it('неизвестный сырой статус становится VERIFYING', async () => {

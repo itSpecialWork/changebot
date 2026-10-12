@@ -42,7 +42,17 @@ export const changeNowExchangeStatusSchema = z.object({
   status: z.string().min(1),
   amountFrom: z.string().nullable().optional(),
   amountTo: z.string().nullable().optional(),
+  payinHash: z.string().nullable().optional(),
+  payoutHash: z.string().nullable().optional(),
+  refundHash: z.string().nullable().optional(),
 });
+
+/** NULL и пустая строка — значения нет. Края обрезаются, регистр и ведущие нули сохраняются. */
+export function optionalText(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
 
 export const changeNowPrivateTransferEstimateSchema = z.object({
   currency: z.string(),

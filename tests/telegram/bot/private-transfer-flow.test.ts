@@ -64,6 +64,9 @@ describe('бот: перевод той же монеты включён', () =>
 
     await bot.sendText(USER, ADDRESS);
     expect(bot.lastText()).toContain('Ждёт вашего подтверждения');
+    expect(bot.lastText()).toContain('Перевод USDT (trx)');
+    expect(bot.lastText()).toContain('Без конвертации');
+    expect(bot.lastText()).not.toContain('Курс: фиксированный');
     const exchange = [...bot.exchangeRepository.rows.values()][0];
     expect(exchange?.expectedToAmount).toBe('100');
     expect(exchange?.expectedFromAmount).toBe('101');
@@ -74,13 +77,18 @@ describe('бот: перевод той же монеты включён', () =>
     if (!confirm) throw new Error('Confirm button is missing');
     await bot.pressButton(USER, confirm);
 
-    expect(bot.lastText()).toContain('Ожидаем ваш платёж');
+    expect(bot.lastText()).toContain('Квитанция');
+    expect(bot.lastText()).toContain('В ожидании');
+    expect(bot.lastText()).toContain('Адрес получателя');
+    expect(bot.lastText()).toContain(ADDRESS);
+    expect(bot.lastText()).toContain('перевод продвинется дальше');
     expect(bot.lastText()).toContain('mock-payin-address-');
     const created = bot.exchangeRepository.rows.get(confirm.slice(2));
     expect(created?.status).toBe('WAITING_DEPOSIT');
 
     await bot.pressButton(USER, `d:${confirm.slice(2)}`);
-    expect(bot.lastText()).toContain('Ждём подтверждения сети');
+    expect(bot.lastText()).toContain('В ожидании');
+    expect(bot.lastText()).not.toContain('Успешно');
   });
 
   it('от суммы отправителя считает, сколько получит адресат, и не просит отправить больше', async () => {
@@ -104,7 +112,8 @@ describe('бот: перевод той же монеты включён', () =>
     if (!confirm) throw new Error('Confirm button is missing');
     await bot.pressButton(USER, confirm);
 
-    expect(bot.lastText()).toContain('Ожидаем ваш платёж');
+    expect(bot.lastText()).toContain('В ожидании');
+    expect(bot.lastText()).toContain('Сумма: <b>101 USDT (trx)</b>');
     expect(bot.lastText()).toContain('Отправьте ровно <b>101 USDT (trx)</b>');
     const created = bot.exchangeRepository.rows.get(confirm.slice(2));
     expect(created?.status).toBe('WAITING_DEPOSIT');
@@ -112,7 +121,8 @@ describe('бот: перевод той же монеты включён', () =>
     expect(compareDecimal(created?.expectedFromAmount ?? '0', '101')).toBeLessThanOrEqual(0);
 
     await bot.pressButton(USER, `d:${confirm.slice(2)}`);
-    expect(bot.lastText()).toContain('Ждём подтверждения сети');
+    expect(bot.lastText()).toContain('В ожидании');
+    expect(bot.lastText()).not.toContain('Успешно');
   });
 
   it('другая монета сразу переходит к сумме и не спрашивает тип курса', async () => {

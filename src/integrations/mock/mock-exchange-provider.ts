@@ -244,6 +244,9 @@ export class MockExchangeProvider implements ExchangeProvider {
       status: RAW_STATUS_TO_INTERNAL[exchange.providerStatus] ?? 'VERIFYING',
       actualFromAmount: exchange.actualFromAmount,
       actualToAmount: exchange.actualToAmount,
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
     };
   }
 

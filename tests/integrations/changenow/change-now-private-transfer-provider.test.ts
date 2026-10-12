@@ -183,6 +183,9 @@ describe('ChangeNowPrivateTransferProvider', () => {
       status: 'FINISHED',
       actualFromAmount: '0.013',
       actualToAmount: '7.41109355',
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
     });
   });
 

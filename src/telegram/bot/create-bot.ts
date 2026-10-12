@@ -90,6 +90,8 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return exchanges.cancel(ctx, action.exchangeId);
       case 'demo':
         return exchanges.advanceDemo(ctx, action.exchangeId);
+      case 'receipt':
+        return exchanges.showReceipt(ctx, action.exchangeId, action.full);
       case 'currency_page':
         return newExchange.changePage(ctx, action.direction);
       case 'currency_back':

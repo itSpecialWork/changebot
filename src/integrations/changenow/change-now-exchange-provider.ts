@@ -33,6 +33,7 @@ import {
   changeNowExchangeStatusSchema,
   changeNowQuoteSchema,
   changeNowRangeSchema,
+  optionalText,
   type ChangeNowCurrency,
 } from './schemas.js';
 
@@ -231,6 +232,9 @@ export class ChangeNowExchangeProvider implements ExchangeProvider {
       status: mapChangeNowStatus(parsed.data.status),
       actualFromAmount: optionalAmount(parsed.data.amountFrom),
       actualToAmount: optionalAmount(parsed.data.amountTo),
+      payinHash: optionalText(parsed.data.payinHash),
+      payoutHash: optionalText(parsed.data.payoutHash),
+      refundHash: optionalText(parsed.data.refundHash),
     };
   }
 

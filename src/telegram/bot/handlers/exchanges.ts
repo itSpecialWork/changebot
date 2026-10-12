@@ -23,10 +23,11 @@ export function createExchangeHandlers(deps: BotDependencies) {
     ctx: BotContext,
     exchange: ExchangeRecord,
     notice?: string,
+    fullReceipt = false,
   ): Promise<void> {
-    const card = renderExchangeCard(exchange, { demo });
+    const card = renderExchangeCard(exchange, { demo, fullReceipt });
     const text = notice ? `${escapeHtml(notice)}\n\n${card}` : card;
-    await show(ctx, text, exchangeCardKeyboard(exchange, { demo }));
+    await show(ctx, text, exchangeCardKeyboard(exchange, { demo, fullReceipt }));
   }
 
   async function showCurrent(ctx: BotContext, exchangeId: string, notice?: string): Promise<void> {
@@ -49,6 +50,16 @@ export function createExchangeHandlers(deps: BotDependencies) {
 
     async open(ctx: BotContext, exchangeId: string): Promise<void> {
       await showCurrent(ctx, exchangeId);
+    },
+
+    /** Полная квитанция показывает хеш выплаты. Короткая карточка его снова прячет. */
+    async showReceipt(ctx: BotContext, exchangeId: string, full: boolean): Promise<void> {
+      await showCard(
+        ctx,
+        await deps.exchanges.getForUser(ctx.appUser.id, exchangeId),
+        undefined,
+        full,
+      );
     },
 
     /** DRAFT/QUOTED → AWAITING_CONFIRMATION: свежая котировка и запрос подтверждения. */

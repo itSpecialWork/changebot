@@ -93,7 +93,10 @@ describe('бот: создание обмена', () => {
     await bot.pressButton(USER, confirm);
 
     const text = bot.lastText();
-    expect(text).toContain('Ожидаем ваш платёж');
+    expect(text).toContain('Квитанция');
+    expect(text).toContain('В ожидании');
+    expect(text).toContain(ADDRESS);
+    expect(text).toContain(`ID: <code>${confirm.slice(2)}</code>`);
     expect(text).toContain('mock-payin-address-');
     expect(text).toContain('Тестовый режим');
     const exchange = [...bot.exchangeRepository.rows.values()][0];
@@ -368,7 +371,8 @@ describe('бот: тестовый режим', () => {
     await bot.pressButton(USER, `d:${exchangeId}`);
 
     expect(bot.exchangeRepository.rows.get(exchangeId)?.status).toBe('CONFIRMING');
-    expect(bot.lastText()).toContain('Ждём подтверждения сети');
+    expect(bot.lastText()).toContain('В ожидании');
+    expect(bot.lastText()).not.toContain('Успешно');
   });
 
   it('проходит весь путь до завершения', async () => {
@@ -382,6 +386,8 @@ describe('бот: тестовый режим', () => {
 
     expect(bot.exchangeRepository.rows.get(exchangeId)?.status).toBe('FINISHED');
     expect(bot.lastText()).toContain('Получено');
+    expect(bot.lastText()).toContain('Успешно');
+    expect(bot.lastText()).not.toContain('В ожидании');
     expect(bot.lastButtons()).not.toContain(`d:${exchangeId}`);
   });
 });

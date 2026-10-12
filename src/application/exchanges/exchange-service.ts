@@ -167,6 +167,17 @@ interface MoveOptions {
   readonly notification?: NotificationDraft;
 }
 
+/** Хэши, которые провайдер уже знает. Пустое значение уже сохранённый хэш не затирает. */
+function transactionHashPatch(
+  remote: Pick<ProviderExchangeStatus, 'payinHash' | 'payoutHash' | 'refundHash'>,
+): { payinHash?: string; payoutHash?: string; refundHash?: string } {
+  return {
+    ...(remote.payinHash !== null ? { payinHash: remote.payinHash } : {}),
+    ...(remote.payoutHash !== null ? { payoutHash: remote.payoutHash } : {}),
+    ...(remote.refundHash !== null ? { refundHash: remote.refundHash } : {}),
+  };
+}
+
 function requireNonEmpty(value: string, field: string): void {
   if (value.trim() === '') {
     throw new InvalidExchangeInputError(`${field} must not be empty`);
@@ -589,6 +600,7 @@ export class ExchangeService {
         at: now,
         nextCheckAt: new Date(now.getTime() + this.config.pollIntervalMs),
         providerStatus: remote.providerStatus,
+        ...transactionHashPatch(remote),
       });
       return { outcome: 'unchanged', exchange: updated };
     }
@@ -617,6 +629,7 @@ export class ExchangeService {
       patch: {
         providerStatus: remote.providerStatus,
         lastCheckedAt: now,
+        ...transactionHashPatch(remote),
         ...(remote.actualFromAmount !== null ? { actualFromAmount: remote.actualFromAmount } : {}),
         ...(remote.actualToAmount !== null ? { actualToAmount: remote.actualToAmount } : {}),
       },
