@@ -58,3 +58,17 @@ export function compareDecimal(a: string, b: string): -1 | 0 | 1 {
 export function multiplyDecimal(a: string, b: string): string {
   return formatDecimal((parseDecimal(a) * parseDecimal(b)) / SCALE);
 }
+
+/**
+ * `amount * numerator / denominator` с округлением вниз.
+ * Нужно, чтобы из суммы отправки получить сумму получения и не запросить больше, чем есть.
+ */
+export function proportionalDecimal(
+  amount: string,
+  numerator: string,
+  denominator: string,
+): string {
+  const divisor = parseDecimal(denominator);
+  if (divisor === 0n) throw new InvalidDecimalError();
+  return formatDecimal((parseDecimal(amount) * parseDecimal(numerator)) / divisor);
+}

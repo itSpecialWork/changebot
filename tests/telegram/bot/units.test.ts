@@ -34,6 +34,14 @@ describe('callback data', () => {
       kind: 'rate',
       rateType: 'FIXED',
     });
+    expect(parseCallbackData(callbackData.transferReceive)).toEqual({
+      kind: 'transfer_basis',
+      basis: 'receive',
+    });
+    expect(parseCallbackData(callbackData.transferSpend)).toEqual({
+      kind: 'transfer_basis',
+      basis: 'spend',
+    });
     expect(parseCallbackData(callbackData.currencyNext)).toEqual({
       kind: 'currency_page',
       direction: 'next',

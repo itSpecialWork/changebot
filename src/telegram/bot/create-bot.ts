@@ -74,6 +74,8 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return newExchange.selectTo(ctx, action.ticker, action.network);
       case 'rate':
         return newExchange.selectRate(ctx, action.rateType);
+      case 'transfer_basis':
+        return newExchange.selectTransferBasis(ctx, action.basis);
       case 'skip_extra_id':
         return newExchange.skipExtraId(ctx);
       case 'open':

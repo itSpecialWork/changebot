@@ -208,6 +208,15 @@ function breakRow(keyboard: InlineKeyboard): void {
   if (last === undefined || last.length > 0) keyboard.row();
 }
 
+/** Что указать в переводе одной монеты: сумму получателя или сумму отправителя. */
+export function transferBasisKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Адресат получит', callbackData.transferReceive)
+    .text('У меня есть сумма', callbackData.transferSpend)
+    .row()
+    .text('❌ Отмена', callbackData.menu);
+}
+
 export function rateTypeKeyboard(fixedAvailable: boolean): InlineKeyboard {
   const keyboard = new InlineKeyboard().text('📈 Плавающий', callbackData.rate('FLOATING'));
   if (fixedAvailable) keyboard.text('🔒 Фиксированный', callbackData.rate('FIXED'));

@@ -5,6 +5,7 @@ import {
   InvalidDecimalError,
   multiplyDecimal,
   parseDecimal,
+  proportionalDecimal,
 } from '../../src/domain/shared/decimal-string.js';
 
 describe('decimal-string', () => {
@@ -22,6 +23,13 @@ describe('decimal-string', () => {
     expect(multiplyDecimal('0.1', '3')).toBe('0.3');
     expect(multiplyDecimal('0.3', '3')).toBe('0.9');
     expect(multiplyDecimal('12345678901234567890', '0.000001')).toBe('12345678901234.56789');
+  });
+
+  it('делит пропорцию вниз и не проходит через Float', () => {
+    expect(proportionalDecimal('101', '101', '102.01')).toBe('100');
+    expect(proportionalDecimal('1', '2', '4')).toBe('0.5');
+    expect(proportionalDecimal('1', '1', '3')).toBe('0.333333333333333333333333');
+    expect(() => proportionalDecimal('1', '1', '0')).toThrow(InvalidDecimalError);
   });
 
   it('округляет результат умножения вниз', () => {

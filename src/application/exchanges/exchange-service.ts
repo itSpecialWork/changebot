@@ -33,9 +33,11 @@ import {
   type ExchangeStatus,
 } from '../../domain/exchanges/status-transitions.js';
 import {
+  compareDecimal,
   formatDecimal,
   InvalidDecimalError,
   parseDecimal,
+  proportionalDecimal,
 } from '../../domain/shared/decimal-string.js';
 import type { Logger } from '../../observability/logger.js';
 import { buildExchangeStatusNotification } from '../notifications/exchange-status-notification.js';
@@ -323,6 +325,40 @@ export class ExchangeService {
       },
       this.callOptions(),
     );
+  }
+
+  /**
+   * Предпросмотр перевода от суммы, которая есть у отправителя.
+   * Считает сумму получения так, чтобы к отправке вышло не больше этой суммы.
+   * Ничего не сохраняет. Котировка по-прежнему запрашивается суммой получения.
+   */
+  async previewPrivateTransferSpend(input: {
+    readonly currency: string;
+    readonly network: string;
+    readonly fromAmount: string;
+  }): Promise<PrivateTransferEstimate> {
+    const spend = normalizeAmount(input.fromAmount);
+    const probe = await this.previewPrivateTransfer({
+      currency: input.currency,
+      network: input.network,
+      toAmount: spend,
+    });
+    if (compareDecimal(probe.fromAmount, spend) === 0) return probe;
+
+    const toAmount = this.receiveAmountWithinSpend(spend, probe.toAmount, probe.fromAmount);
+    const quote = await this.previewPrivateTransfer({
+      currency: input.currency,
+      network: input.network,
+      toAmount,
+    });
+    if (compareDecimal(quote.fromAmount, spend) <= 0) return quote;
+
+    const adjusted = this.receiveAmountWithinSpend(spend, quote.toAmount, quote.fromAmount);
+    return this.previewPrivateTransfer({
+      currency: input.currency,
+      network: input.network,
+      toAmount: adjusted,
+    });
   }
 
   /**
@@ -639,6 +675,15 @@ export class ExchangeService {
       expectedToAmount: null,
       rateType: input.rateType,
     };
+  }
+
+  /** Сумма получения, при которой отправка не превышает `spend`. Ноль — сумма слишком мала. */
+  private receiveAmountWithinSpend(spend: string, quotedTo: string, quotedFrom: string): string {
+    const toAmount = proportionalDecimal(spend, quotedTo, quotedFrom);
+    if (compareDecimal(toAmount, '0') === 0) {
+      throw new ExchangeProviderError('AMOUNT_OUT_OF_RANGE', 'Amount is too small');
+    }
+    return toAmount;
   }
 
   private async estimatePrivateTransferDraft(input: CreateDraftInput): Promise<DraftAmounts> {

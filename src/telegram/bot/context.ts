@@ -22,7 +22,11 @@ export interface CurrencyChoice {
   readonly extraId: ExtraIdRequirement;
 }
 
-export type FlowStep = 'from' | 'to' | 'rate' | 'amount' | 'address' | 'extra_id';
+export type FlowStep =
+  'from' | 'to' | 'rate' | 'transfer_basis' | 'amount' | 'address' | 'extra_id';
+
+/** В переводе одной монеты: сумма получателя или сумма, которая есть у отправителя. */
+export type TransferAmountBasis = 'receive' | 'spend';
 
 /**
  * Незавершённый диалог «новый обмен». Живёт только в памяти (до 30 минут бездействия):
@@ -40,6 +44,8 @@ export interface NewExchangeFlow {
    * Для обмена это сумма отправки, для перевода одной монеты — сумма получения.
    */
   amount?: string;
+  /** Какую сумму ввёл пользователь на переводе одной монеты. */
+  amountBasis?: TransferAmountBasis;
   payoutAddress?: string;
   /** Фильтр каталога на шагах выбора валюты. Пустая строка — без поиска. */
   currencyQuery: string;

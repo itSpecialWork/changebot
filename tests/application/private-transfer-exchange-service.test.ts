@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ExchangeService } from '../../src/application/exchanges/exchange-service.js';
 import { ExchangeProviderError } from '../../src/domain/exchanges/exchange-provider.js';
 import type { PrivateTransferProvider } from '../../src/domain/exchanges/private-transfer-provider.js';
+import { compareDecimal } from '../../src/domain/shared/decimal-string.js';
 import {
   DEFAULT_MOCK_CURRENCIES,
   DEFAULT_MOCK_RATES,
@@ -124,6 +125,23 @@ describe('та же монета', () => {
     });
     expect(preview.toAmount).toBe('100');
     expect(preview.fromAmount).toBe('101');
+    expect(repository.rows.size).toBe(0);
+
+    const bySpend = await service.previewPrivateTransferSpend({
+      currency: 'usdt',
+      network: 'trx',
+      fromAmount: '101',
+    });
+    expect(bySpend.toAmount).toBe('100');
+    expect(bySpend.fromAmount).toBe('101');
+
+    const thousand = await service.previewPrivateTransferSpend({
+      currency: 'usdt',
+      network: 'trx',
+      fromAmount: '1000',
+    });
+    expect(compareDecimal(thousand.fromAmount, '1000')).toBeLessThanOrEqual(0);
+    expect(compareDecimal(thousand.toAmount, thousand.fromAmount)).toBe(-1);
     expect(repository.rows.size).toBe(0);
 
     const draft = await service.createDraft({

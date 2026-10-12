@@ -40,8 +40,13 @@ describe('бот: перевод той же монеты включён', () =>
     expect(bot.lastButtons()).toContain('t:usdt:trx');
 
     await bot.pressButton(USER, 't:usdt:trx');
-    expect(bot.lastText()).toContain('должен получить адресат');
+    expect(bot.lastText()).toContain('Что вы указываете');
+    expect(bot.lastButtons()).toContain('b:r');
+    expect(bot.lastButtons()).toContain('b:s');
     expect(bot.lastText()).not.toContain('Выберите тип курса');
+
+    await bot.pressButton(USER, 'b:r');
+    expect(bot.lastText()).toContain('должен получить адресат');
 
     await bot.sendText(USER, '100');
     expect(bot.lastText()).toContain('100 USDT (trx)');
@@ -66,6 +71,23 @@ describe('бот: перевод той же монеты включён', () =>
 
     await bot.pressButton(USER, `d:${confirm.slice(2)}`);
     expect(bot.lastText()).toContain('Ждём подтверждения сети');
+  });
+
+  it('от суммы отправителя считает, сколько получит адресат, и не просит отправить больше', async () => {
+    await bot.pressButton(USER, 'm:new');
+    await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 't:usdt:trx');
+    await bot.pressButton(USER, 'b:s');
+    expect(bot.lastText()).toContain('которая у вас есть');
+
+    await bot.sendText(USER, '101');
+    expect(bot.lastText()).toContain('100 USDT (trx)');
+    expect(bot.lastText()).toContain('101 USDT (trx)');
+
+    await bot.sendText(USER, ADDRESS);
+    const exchange = [...bot.exchangeRepository.rows.values()][0];
+    expect(exchange?.expectedToAmount).toBe('100');
+    expect(exchange?.expectedFromAmount).toBe('101');
   });
 
   it('другая монета по-прежнему спрашивает тип курса', async () => {
