@@ -67,6 +67,10 @@ describe('callback data', () => {
       kind: 'currency_page',
       direction: 'prev',
     });
+    expect(parseCallbackData(callbackData.currencyBase)).toEqual({
+      kind: 'currency_catalog',
+      catalog: 'base',
+    });
     expect(parseCallbackData(callbackData.currencyPopular)).toEqual({
       kind: 'currency_catalog',
       catalog: 'popular',
@@ -74,6 +78,20 @@ describe('callback data', () => {
     expect(parseCallbackData(callbackData.currencyAll)).toEqual({
       kind: 'currency_catalog',
       catalog: 'all',
+    });
+    expect(parseCallbackData(callbackData.support)).toEqual({ kind: 'support' });
+    expect(parseCallbackData(callbackData.agreements)).toEqual({ kind: 'agreements' });
+    expect(parseCallbackData(callbackData.agreementUse)).toEqual({
+      kind: 'agreement',
+      section: 'use',
+    });
+    expect(parseCallbackData(callbackData.agreementRisk)).toEqual({
+      kind: 'agreement',
+      section: 'risk',
+    });
+    expect(parseCallbackData(callbackData.agreementData)).toEqual({
+      kind: 'agreement',
+      section: 'data',
     });
     for (const build of [
       callbackData.open,

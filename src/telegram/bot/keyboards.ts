@@ -13,9 +13,30 @@ export const CURRENCY_PAGE_SIZE = 48;
 export const CURRENCY_SUGGESTION_SIZE = 8;
 
 /**
- * Короткий список на шаге выбора валюты.
- * Порядок — как на кнопках. Монеты, которых нет в каталоге, пропускаются.
+ * Пары на первом экране обмена. Сеть уже в кнопке, отдельно её не спрашиваем.
  * USDT в сети BNB у ChangeNOW имеет код `bsc`; если его нет, берётся `bnb`.
+ * Монеты, которых нет в каталоге, пропускаются.
+ */
+export const BASE_PAIRS: readonly {
+  readonly ticker: string;
+  readonly networks: readonly string[];
+}[] = [
+  { ticker: 'usdt', networks: ['trx'] },
+  { ticker: 'usdt', networks: ['bsc', 'bnb'] },
+  { ticker: 'btc', networks: ['btc'] },
+  { ticker: 'trx', networks: ['trx'] },
+  { ticker: 'sol', networks: ['sol'] },
+];
+
+const BASE_LABELS: Readonly<Record<string, string>> = {
+  'usdt:trx': 'USDT TRX',
+  'usdt:bsc': 'USDT BNB',
+  'usdt:bnb': 'USDT BNB',
+};
+
+/**
+ * Актуальные монеты по кнопке «Все валюты».
+ * Порядок — как на кнопках. Монеты, которых нет в каталоге, пропускаются.
  */
 export const POPULAR_PAIRS: readonly {
   readonly ticker: string;
@@ -41,10 +62,10 @@ const PAIR_BUTTON_LABELS: Readonly<Record<string, string>> = {
   'usdt:bnb': 'USDT · BEP20',
 };
 
-export type CurrencyCatalog = 'popular' | 'all';
+export type CurrencyCatalog = 'base' | 'popular' | 'all';
 
 export interface CurrencySelection {
-  readonly mode: 'all' | 'popular' | 'search';
+  readonly mode: 'all' | 'popular' | 'base' | 'search';
   readonly stage: CurrencyStage;
   readonly items: readonly ProviderCurrency[];
   readonly page: number;
@@ -64,23 +85,30 @@ function currencyKey(currency: ProviderCurrency): string {
   return `${currency.ticker}:${currency.network}`;
 }
 
-/** Сети короткого списка для одной монеты. Для USDT это TRC20, ERC20 и BEP20. */
-function popularNetworksFor(
+/** Пары из списка, которые есть в каталоге. Один пункт списка — одна кнопка. */
+function pairsPresent(
   currencies: readonly ProviderCurrency[],
-  ticker: string,
+  pairs: readonly { readonly ticker: string; readonly networks: readonly string[] }[],
 ): ProviderCurrency[] {
   const byKey = new Map(currencies.map((currency) => [currencyKey(currency), currency]));
   const picked: ProviderCurrency[] = [];
-  for (const pair of POPULAR_PAIRS) {
-    if (pair.ticker !== ticker) continue;
+  for (const pair of pairs) {
     for (const network of pair.networks) {
-      const currency = byKey.get(`${ticker}:${network}`);
+      const currency = byKey.get(`${pair.ticker}:${network}`);
       if (!currency) continue;
       picked.push(currency);
       break;
     }
   }
   return picked;
+}
+
+/** Сети актуального списка для одной монеты. Для USDT это TRC20, ERC20 и BEP20. */
+function popularNetworksFor(
+  currencies: readonly ProviderCurrency[],
+  ticker: string,
+): ProviderCurrency[] {
+  return pairsPresent(currencies, POPULAR_PAIRS).filter((currency) => currency.ticker === ticker);
 }
 
 /** По одной кнопке на монету, в порядке короткого списка. */
@@ -186,14 +214,11 @@ function pageSlice(
 }
 
 /**
- * Страница валют для кнопок.
- * Без запроса: короткий список популярных валют или полный каталог.
- * Небезопасные тикер и сеть в кнопки не попадают: callback их не примет.
- */
-/**
  * Страница кнопок.
- * Сначала уникальные монеты. Сеть открывается отдельно: в коротком списке только
- * его сети, в полном каталоге и поиске — все сети этой монеты.
+ * Базовый экран — готовые пары. «Все валюты» — актуальные монеты без повтора сети.
+ * Сеть открывается отдельно, только если у монеты их несколько: в актуальном списке
+ * только его сети, в полном каталоге и поиске — все сети этой монеты.
+ * Небезопасные тикер и сеть в кнопки не попадают: callback их не примет.
  */
 export function selectCurrencies(
   currencies: readonly ProviderCurrency[],
@@ -218,6 +243,9 @@ export function selectCurrencies(
   if (query !== '') {
     mode = 'search';
     pool = searchTokens(safe, query);
+  } else if (state.catalog === 'base') {
+    mode = 'base';
+    pool = pairsPresent(safe, BASE_PAIRS);
   } else if (state.catalog === 'popular') {
     mode = 'popular';
     pool = popularTokens(safe);
@@ -234,11 +262,34 @@ export function mainMenuKeyboard(): InlineKeyboard {
     .text('🔄 Новый обмен', callbackData.newExchange)
     .row()
     .text('📋 Мои обмены', callbackData.list)
+    .row()
+    .text('💬 Служба поддержки', callbackData.support)
+    .row()
+    .text('📄 Соглашения', callbackData.agreements)
     .text('ℹ️ Помощь', callbackData.help);
 }
 
 export function backToMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('🏠 В меню', callbackData.menu);
+}
+
+/** Оглавление соглашений: каждый пункт — отдельный короткий экран. */
+export function agreementsKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('Условия обмена', callbackData.agreementUse)
+    .row()
+    .text('Риски', callbackData.agreementRisk)
+    .row()
+    .text('Какие данные храним', callbackData.agreementData)
+    .row()
+    .text('🏠 В меню', callbackData.menu);
+}
+
+/** Возврат из раздела соглашения к оглавлению. */
+export function agreementSectionKeyboard(): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('◀️ К соглашениям', callbackData.agreements)
+    .text('🏠 В меню', callbackData.menu);
 }
 
 /** Кнопки монеты или её сети. `kind` определяет, какое действие вызовет нажатие. */
@@ -249,9 +300,11 @@ export function currencyKeyboard(
   const keyboard = new InlineKeyboard();
   selection.items.forEach((currency, index) => {
     if (index > 0 && index % 2 === 0) keyboard.row();
-    if (selection.stage === 'network') {
+    if (selection.stage === 'network' || selection.mode === 'base') {
       const build = kind === 'from' ? callbackData.from : callbackData.to;
-      keyboard.text(networkButtonLabel(currency), build(currency.ticker, currency.network));
+      const text =
+        selection.mode === 'base' ? baseButtonLabel(currency) : networkButtonLabel(currency);
+      keyboard.text(text, build(currency.ticker, currency.network));
     } else {
       keyboard.text(currency.ticker.toUpperCase(), callbackData.ticker(kind, currency.ticker));
     }
@@ -268,17 +321,29 @@ export function currencyKeyboard(
   if (selection.stage === 'network') {
     return keyboard.text('Назад', callbackData.currencyBack).text('❌ Отмена', callbackData.menu);
   }
-  if (selection.mode === 'popular') {
-    keyboard.text('📋 Все валюты', callbackData.currencyAll);
+  if (selection.mode === 'base') {
+    keyboard.text('📋 Все валюты', callbackData.currencyPopular);
+  } else if (selection.mode === 'popular') {
+    keyboard.text('Базовые', callbackData.currencyBase);
   } else if (selection.mode === 'all') {
-    keyboard.text('⭐ Актуальные', callbackData.currencyPopular);
+    keyboard
+      .text('Базовые', callbackData.currencyBase)
+      .text('⭐ Актуальные', callbackData.currencyPopular);
   } else {
     keyboard
-      .text('⭐ Актуальные', callbackData.currencyPopular)
-      .text('📋 Все валюты', callbackData.currencyAll);
+      .text('Базовые', callbackData.currencyBase)
+      .text('📋 Все валюты', callbackData.currencyPopular);
   }
   breakRow(keyboard);
   return keyboard.text('❌ Отмена', callbackData.menu);
+}
+
+function baseButtonLabel(currency: ProviderCurrency): string {
+  const known = BASE_LABELS[currencyKey(currency)];
+  if (known !== undefined) return known;
+  const ticker = currency.ticker.toUpperCase();
+  const network = networkLabel(currency.network).toUpperCase();
+  return ticker === network ? ticker : `${ticker} ${network}`;
 }
 
 function networkButtonLabel(currency: ProviderCurrency): string {

@@ -45,6 +45,11 @@ export const DEFAULT_NOTIFICATION_SERVICE_CONFIG: NotificationServiceConfig = {
   minSendIntervalMs: 50,
 };
 
+/** Второе сообщение сразу под статусом. undefined — ничего не добавлять. */
+export type NotificationFollowUp = (
+  notification: ClaimedNotification,
+) => Promise<{ readonly text: string; readonly html?: boolean } | undefined>;
+
 export interface NotificationServiceDependencies {
   readonly repository: NotificationOutboxRepository;
   readonly sender: NotificationSender;
@@ -52,6 +57,11 @@ export interface NotificationServiceDependencies {
   readonly now?: () => Date;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly config?: Partial<NotificationServiceConfig>;
+  /**
+   * Квитанция после финального статуса. Текст собирается в момент отправки,
+   * в outbox адреса и суммы не пишутся.
+   */
+  readonly followUp?: NotificationFollowUp;
 }
 
 export interface DispatchSummary {
@@ -86,6 +96,7 @@ export class NotificationService {
   private readonly now: () => Date;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly config: NotificationServiceConfig;
+  private readonly followUp: NotificationFollowUp | undefined;
 
   constructor(deps: NotificationServiceDependencies) {
     this.repository = deps.repository;
@@ -94,6 +105,7 @@ export class NotificationService {
     this.now = deps.now ?? (() => new Date());
     this.sleep = deps.sleep ?? defaultSleep;
     this.config = { ...DEFAULT_NOTIFICATION_SERVICE_CONFIG, ...deps.config };
+    this.followUp = deps.followUp;
   }
 
   /** Один проход: освобождает зависшие записи и доставляет до `limit` созревших. */
@@ -162,10 +174,19 @@ export class NotificationService {
     }
 
     try {
-      await this.sender.send(
-        { chatId: notification.telegramId, text },
-        { signal: AbortSignal.timeout(this.config.sendTimeoutMs) },
-      );
+      const signal = () => AbortSignal.timeout(this.config.sendTimeoutMs);
+      await this.sender.send({ chatId: notification.telegramId, text }, { signal: signal() });
+      const extra = this.followUp ? await this.followUp(notification) : undefined;
+      if (extra !== undefined) {
+        await this.sender.send(
+          {
+            chatId: notification.telegramId,
+            text: extra.text,
+            ...(extra.html ? { html: true } : {}),
+          },
+          { signal: signal() },
+        );
+      }
     } catch (error) {
       return this.handleSendError(notification, ref, error);
     }

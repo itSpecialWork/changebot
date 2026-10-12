@@ -67,12 +67,16 @@ describe('buildExchangeStatusNotification', () => {
     });
   });
 
-  it.each(['DRAFT', 'QUOTED', 'AWAITING_CONFIRMATION', 'CREATING'] as const)(
-    'не создаёт уведомление для %s',
-    (status) => {
-      expect(buildExchangeStatusNotification(exchange('DRAFT'), status)).toBeUndefined();
-    },
-  );
+  it.each([
+    'DRAFT',
+    'QUOTED',
+    'AWAITING_CONFIRMATION',
+    'CREATING',
+    'EXCHANGING',
+    'SENDING',
+  ] as const)('не создаёт уведомление для %s', (status) => {
+    expect(buildExchangeStatusNotification(exchange('DRAFT'), status)).toBeUndefined();
+  });
 
   it('не кладёт адреса, memo и хэши в payload', () => {
     for (const status of EXCHANGE_STATUSES) {
@@ -91,9 +95,30 @@ describe('renderNotification', () => {
     toCurrency: 'btc',
   });
 
-  it('формирует текст с парой валют и описанием статуса', () => {
+  it('формирует текст с парой, номером заявки и нейтральным статусом', () => {
+    const order = EXCHANGE_ID.slice(-8);
+    expect(renderNotification(EXCHANGE_STATUS_CHANGED, payload('CONFIRMING'))).toBe(
+      [
+        '💳 Обмен USDT → BTC',
+        '',
+        `Заявка: ${order}`,
+        '',
+        'Видим ваш платёж.',
+        'Средства будут зачислены в течение короткого времени.',
+      ].join('\n'),
+    );
     expect(renderNotification(EXCHANGE_STATUS_CHANGED, payload('FINISHED'))).toBe(
-      'Обмен USDT → BTC\nОбмен завершён, средства отправлены на ваш адрес.',
+      [
+        '✅ Обмен USDT → BTC',
+        '',
+        `Заявка: ${order}`,
+        '',
+        'Обмен завершён.',
+        'Средства отправлены на ваш адрес.',
+      ].join('\n'),
+    );
+    expect(renderNotification(EXCHANGE_STATUS_CHANGED, payload('CONFIRMING'))).not.toContain(
+      'получены',
     );
   });
 

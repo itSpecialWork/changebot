@@ -55,8 +55,8 @@ export interface NewExchangeFlow {
   /** Фильтр списка монет. Пустая строка — без поиска. */
   currencyQuery: string;
   currencyPage: number;
-  /** Короткий список популярных монет или полный каталог. */
-  currencyCatalog: 'popular' | 'all';
+  /** Базовые пары, актуальные монеты или полный каталог. */
+  currencyCatalog: 'base' | 'popular' | 'all';
   /** Имя монеты или выбор сети уже выбранной монеты. */
   currencyStage: CurrencyStage;
   /** Монета, для которой открыт экран сети. */

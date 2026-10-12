@@ -43,14 +43,17 @@ describe('бот: перевод той же монеты включён', () =>
   it('оставляет ту же монету кнопкой и проводит перевод до оплаты', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');
-    expect(bot.lastButtons()).toContain('t:usdt');
-    expect(bot.lastButtons()).not.toContain('t:usdt:trx');
-
-    await bot.pressButton(USER, 't:usdt');
     expect(bot.lastButtons()).toContain('t:usdt:trx');
+    expect(bot.lastButtons()).not.toContain('t:usdt');
 
     await bot.pressButton(USER, 't:usdt:trx');
-    expect(bot.lastText()).toContain('Что вы указываете');
+    const basis = bot.lastText();
+    expect(basis).toContain(
+      '<blockquote>Перевод без конвертации\n<b>USDT (trx) → USDT (trx)</b></blockquote>',
+    );
+    expect(basis).toContain('<b>Что вы указываете?</b>');
+    expect(basis).toContain('<b>Адресат получит</b>\nСколько должно прийти на адрес.');
+    expect(basis).toContain('К отправке будет не больше этой суммы.');
     expect(bot.lastButtons()).toContain('b:r');
     expect(bot.lastButtons()).toContain('b:s');
     expect(bot.lastText()).not.toContain('Выберите тип курса');
@@ -205,7 +208,9 @@ describe('бот: перевод той же монеты включён', () =>
 
     await catalog.pressButton(USER, 'm:new');
     await catalog.pressButton(USER, 'f:usdt:trx');
+    await catalog.pressButton(USER, 'u:h');
     expect(catalog.lastButtons()).toContain('t:usdt');
+    expect(catalog.lastButtons()).not.toContain('t:usdt:trx');
 
     await catalog.pressButton(USER, 't:usdt');
     expect(catalog.lastButtons()).toContain('t:usdt:eth');

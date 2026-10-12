@@ -64,6 +64,12 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         return menu.menu(ctx);
       case 'help':
         return menu.help(ctx);
+      case 'support':
+        return menu.support(ctx);
+      case 'agreements':
+        return menu.agreements(ctx);
+      case 'agreement':
+        return menu.agreement(ctx, action.section);
       case 'new':
         return newExchange.start(ctx);
       case 'list':

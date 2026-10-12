@@ -20,7 +20,7 @@ function callbacks(
   currencies: readonly ProviderCurrency[],
   query = '',
   page = 0,
-  catalog: 'popular' | 'all' = 'popular',
+  catalog: 'base' | 'popular' | 'all' = 'popular',
 ): string[] {
   const selection = selectCurrencies(currencies, { query, page, catalog });
   return currencyKeyboard(kind, selection)
@@ -31,6 +31,49 @@ function callbacks(
 }
 
 describe('клавиатура валют', () => {
+  it('базовый экран показывает готовые пары и не спрашивает сеть ещё раз', () => {
+    const currencies = [
+      currency('btc', 'Bitcoin', true, 'btc'),
+      currency('trx', 'TRON', false, 'trx'),
+      currency('sol', 'Solana', false, 'sol'),
+      currency('eth', 'Ethereum', false, 'eth'),
+      currency('usdt', 'Tether TRC20', false, 'trx'),
+      currency('usdt', 'Tether BEP20', false, 'bsc'),
+      currency('usdt', 'Tether BNB', false, 'bnb'),
+    ];
+    const selection = selectCurrencies(currencies, { query: '', page: 0, catalog: 'base' });
+    const labels = currencyKeyboard('from', selection)
+      .inline_keyboard.flat()
+      .flatMap((button) => ('text' in button ? [button.text] : []));
+
+    expect(selection.items.map((item) => `${item.ticker}:${item.network}`)).toEqual([
+      'usdt:trx',
+      'usdt:bsc',
+      'btc:btc',
+      'trx:trx',
+      'sol:sol',
+    ]);
+    expect(callbacks('from', currencies, '', 0, 'base')).toEqual([
+      'f:usdt:trx',
+      'f:usdt:bsc',
+      'f:btc:btc',
+      'f:trx:trx',
+      'f:sol:sol',
+      'u:h',
+      'm:menu',
+    ]);
+    expect(labels).toEqual([
+      'USDT TRX',
+      'USDT BNB',
+      'BTC',
+      'TRX',
+      'SOL',
+      '📋 Все валюты',
+      '❌ Отмена',
+    ]);
+    expect(selection.mode).toBe('base');
+  });
+
   it('популярные монеты начинаются с USDT, без повтора сетей', () => {
     const currencies = [
       currency('btc', 'Bitcoin', true, 'btc'),
@@ -47,7 +90,7 @@ describe('клавиатура валют', () => {
       .flatMap((button) => ('text' in button ? [button.text] : []));
 
     expect(selection.items.map((item) => item.ticker)).toEqual(['usdt', 'trx', 'btc']);
-    expect(callbacks('from', currencies)).toEqual(['f:usdt', 'f:trx', 'f:btc', 'u:a', 'm:menu']);
+    expect(callbacks('from', currencies)).toEqual(['f:usdt', 'f:trx', 'f:btc', 'u:s', 'm:menu']);
     expect(labels).toEqual(expect.arrayContaining(['USDT', 'TRX', 'BTC']));
     expect(labels).not.toContain('USDT · TRC20');
     expect(selection.mode).toBe('popular');

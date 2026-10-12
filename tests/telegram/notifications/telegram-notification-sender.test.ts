@@ -104,6 +104,16 @@ describe('TelegramNotificationSender', () => {
     expect(passedSignal).toBe(signal);
   });
 
+  it('квитанцию отправляет с HTML-разметкой', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({});
+    const sender = new TelegramNotificationSender({ sendMessage });
+
+    await sender.send({ chatId: 1n, text: '<b>Квитанция</b>', html: true }, { signal });
+
+    const other = sendMessage.mock.calls[0]?.[2] as { parse_mode?: string };
+    expect(other.parse_mode).toBe('HTML');
+  });
+
   it('оборачивает ошибки Telegram в NotificationSendError', async () => {
     const sendMessage = vi.fn().mockRejectedValue(telegramError(403, 'Forbidden: bot was blocked'));
     const sender = new TelegramNotificationSender({ sendMessage });

@@ -124,7 +124,7 @@ export function renderExchangeCard(exchange: ExchangeRecord, options: CardOption
     } else if (exchange.status === 'FAILED') {
       lines.push(
         '',
-        'Если вы уже отправляли средства, обратитесь в поддержку и назовите ID из квитанции.',
+        'Если вы уже отправляли средства, откройте «Служба поддержки» в меню и назовите ID из квитанции.',
       );
     }
     return lines.join('\n');

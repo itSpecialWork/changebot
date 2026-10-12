@@ -16,25 +16,37 @@ import type { NotificationDraft } from './notification-repository.js';
 export const EXCHANGE_STATUS_CHANGED = 'EXCHANGE_STATUS_CHANGED';
 
 /**
- * Статусы, о которых сообщаем пользователю. DRAFT, QUOTED, AWAITING_CONFIRMATION
- * и CREATING пользователь видит сам в диалоге.
+ * Статусы, о которых пишем в чат. DRAFT, QUOTED, AWAITING_CONFIRMATION и CREATING
+ * пользователь видит сам в диалоге. EXCHANGING и SENDING не пишем: между «видим
+ * платёж» и финалом он ничего не решает, лишние сообщения только путают.
  */
-const STATUS_MESSAGES = {
-  WAITING_DEPOSIT: 'Обмен создан. Ожидаем поступление ваших средств.',
-  CONFIRMING: 'Средства получены, ждём подтверждения сети.',
-  EXCHANGING: 'Платёж подтверждён, выполняем обмен.',
-  SENDING: 'Обмен выполнен, отправляем средства на ваш адрес.',
-  FINISHED: 'Обмен завершён, средства отправлены на ваш адрес.',
-  FAILED: 'Обмен не удался. Если вы уже отправляли средства, обратитесь в поддержку.',
-  REFUNDED: 'Средства возвращены на адрес возврата.',
-  VERIFYING: 'Обмен проверяется провайдером. Мы сообщим о результате.',
-  EXPIRED: 'Срок действия обмена истёк.',
-} as const satisfies Partial<Record<ExchangeStatus, string>>;
+const STATUS_BODIES = {
+  WAITING_DEPOSIT: ['Заявка создана.', 'Отправьте средства по инструкции в карточке.'],
+  CONFIRMING: ['Видим ваш платёж.', 'Средства будут зачислены в течение короткого времени.'],
+  FINISHED: ['Обмен завершён.', 'Средства отправлены на ваш адрес.'],
+  FAILED: [
+    'Обмен не удался.',
+    'Если вы уже отправляли средства, откройте «Служба поддержки» и назовите номер заявки.',
+  ],
+  REFUNDED: ['Средства по этой заявке возвращены.'],
+  VERIFYING: ['Заявка на проверке.', 'Напишем, когда появится результат.'],
+  EXPIRED: ['Срок заявки истёк.', 'Если вы не отправляли средства, ничего делать не нужно.'],
+} as const satisfies Partial<Record<ExchangeStatus, readonly string[]>>;
 
-type NotifiableStatus = keyof typeof STATUS_MESSAGES;
+const STATUS_EMOJI = {
+  WAITING_DEPOSIT: '⏳',
+  CONFIRMING: '💳',
+  FINISHED: '✅',
+  FAILED: '❌',
+  REFUNDED: '↩️',
+  VERIFYING: '🔍',
+  EXPIRED: '⌛',
+} as const satisfies Record<keyof typeof STATUS_BODIES, string>;
+
+type NotifiableStatus = keyof typeof STATUS_BODIES;
 
 function isNotifiable(status: ExchangeStatus): status is NotifiableStatus {
-  return Object.hasOwn(STATUS_MESSAGES, status);
+  return Object.hasOwn(STATUS_BODIES, status);
 }
 
 const exchangeStatusSchema = z.enum(EXCHANGE_STATUSES);
@@ -84,7 +96,14 @@ export function renderNotification(type: string, payload: unknown): string {
   if (!parsed.success || !isNotifiable(parsed.data.toStatus)) {
     throw new InvalidNotificationError('invalid_payload');
   }
-  const { fromCurrency, toCurrency, toStatus } = parsed.data;
+  const { exchangeId, fromCurrency, toCurrency, toStatus } = parsed.data;
   const pair = `${fromCurrency.toUpperCase()} → ${toCurrency.toUpperCase()}`;
-  return `Обмен ${pair}\n${STATUS_MESSAGES[toStatus]}`;
+  const order = exchangeId.slice(-8);
+  return [
+    `${STATUS_EMOJI[toStatus]} Обмен ${pair}`,
+    '',
+    `Заявка: ${order}`,
+    '',
+    ...STATUS_BODIES[toStatus],
+  ].join('\n');
 }

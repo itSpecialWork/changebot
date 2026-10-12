@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_MOCK_CURRENCIES,
+  MockExchangeProvider,
+} from '../../../src/integrations/mock/mock-exchange-provider.js';
+import type { ProviderCurrency } from '../../../src/domain/exchanges/exchange-provider.js';
 import { BotHarness } from './harness.js';
 
 const USER = 1001;
@@ -29,7 +34,9 @@ describe('бот: меню', () => {
     await bot.sendText(USER, '/start');
 
     expect(bot.lastText()).toContain('Тестовый режим');
-    expect(bot.lastButtons()).toEqual(expect.arrayContaining(['m:new', 'm:list', 'm:help']));
+    expect(bot.lastButtons()).toEqual(
+      expect.arrayContaining(['m:new', 'm:list', 'm:help', 'm:sup', 'm:agr']),
+    );
     expect(bot.userRepository.users.has(String(USER))).toBe(true);
   });
 
@@ -70,6 +77,38 @@ describe('бот: меню', () => {
     expect(text).toContain('которая есть у вас');
     expect(text).not.toContain('Выберите тип курса');
     expect(text).toContain('/start, /menu, /exchanges, /help');
+  });
+
+  it('поддержка показывает почту и ссылку на Telegram', async () => {
+    await bot.pressButton(USER, 'm:sup');
+
+    const text = bot.lastText();
+    expect(text).toContain('Служба поддержки');
+    expect(text).toContain('напишите сюда');
+    expect(text).toContain('support@example.com');
+    expect(text).toContain('https://t.me/your_support');
+    expect(text).toContain('@your_support');
+    expect(bot.lastButtons()).toEqual(['m:menu']);
+  });
+
+  it('соглашения открывают три коротких раздела', async () => {
+    await bot.pressButton(USER, 'm:agr');
+
+    expect(bot.lastText()).toContain('Соглашения');
+    expect(bot.lastButtons()).toEqual(['m:use', 'm:rsk', 'm:dat', 'm:menu']);
+
+    await bot.pressButton(USER, 'm:use');
+    expect(bot.lastText()).toContain('Условия обмена');
+    expect(bot.lastText()).toContain('seed-фразы');
+    expect(bot.lastButtons()).toEqual(['m:agr', 'm:menu']);
+
+    await bot.pressButton(USER, 'm:rsk');
+    expect(bot.lastText()).toContain('Риски');
+    expect(bot.lastText()).toContain('Служба поддержки');
+
+    await bot.pressButton(USER, 'm:dat');
+    expect(bot.lastText()).toContain('Какие данные храним');
+    expect(bot.lastText()).toContain('seed-фразы');
   });
 });
 
@@ -289,23 +328,80 @@ describe('бот: поиск валюты', () => {
     expect(bot.lastButtons()).not.toContain('f:eth');
   });
 
-  it('сначала показывает монету, затем сеть, и «Назад» возвращает к монетам', async () => {
+  it('базовая пара выбирает сеть сразу, а USDT из всех валют открывает сети', async () => {
     await bot.pressButton(USER, 'm:new');
+    expect(bot.lastButtons()).toContain('f:usdt:trx');
+    expect(bot.lastButtons()).toContain('f:btc:btc');
+    expect(bot.lastButtons()).not.toContain('f:usdt');
+    expect(bot.lastText()).not.toContain('Выберите сеть');
+
+    await bot.pressButton(USER, 'u:h');
+    expect(bot.lastText()).toContain('Актуальные монеты');
     expect(bot.lastButtons()).toContain('f:usdt');
+    expect(bot.lastButtons()).toContain('f:btc');
     expect(bot.lastButtons()).not.toContain('f:usdt:trx');
 
-    await bot.pressButton(USER, 'f:usdt');
-    expect(bot.lastText()).toContain('Выберите сеть');
-    expect(bot.lastButtons()).toContain('f:usdt:trx');
-    expect(bot.lastButtons()).toContain('u:b');
-
-    await bot.pressButton(USER, 'u:b');
-    expect(bot.lastText()).toContain('Что вы отдаёте');
-    expect(bot.lastButtons()).toContain('f:btc');
-
     await bot.pressButton(USER, 'f:btc');
-    expect(bot.lastButtons()).toEqual(expect.arrayContaining(['f:btc:btc', 'u:b', 'm:menu']));
-    expect(bot.lastButtons().filter((data) => data.startsWith('f:btc:'))).toEqual(['f:btc:btc']);
+    expect(bot.lastText()).toContain('Что хотите получить');
+    expect(bot.lastText()).not.toContain('Выберите сеть');
+  });
+
+  it('TRX не спрашивает сеть, а USDT из всех валют открывает её', async () => {
+    const extra: ProviderCurrency[] = [
+      {
+        ticker: 'trx',
+        network: 'trx',
+        name: 'TRON',
+        extraId: 'none',
+        supportsFixedRate: true,
+        featured: false,
+      },
+      {
+        ticker: 'sol',
+        network: 'sol',
+        name: 'Solana',
+        extraId: 'none',
+        supportsFixedRate: true,
+        featured: false,
+      },
+      {
+        ticker: 'usdt',
+        network: 'bsc',
+        name: 'Tether (BEP20)',
+        extraId: 'none',
+        supportsFixedRate: true,
+        featured: false,
+      },
+    ];
+    const catalog = await BotHarness.create({
+      provider: new MockExchangeProvider({ currencies: [...DEFAULT_MOCK_CURRENCIES, ...extra] }),
+    });
+
+    await catalog.pressButton(USER, 'm:new');
+    expect(catalog.lastButtons()).toEqual(
+      expect.arrayContaining(['f:usdt:trx', 'f:usdt:bsc', 'f:btc:btc', 'f:trx:trx', 'f:sol:sol']),
+    );
+
+    await catalog.pressButton(USER, 'f:trx:trx');
+    expect(catalog.lastText()).toContain('Что хотите получить');
+    expect(catalog.lastText()).not.toContain('Выберите сеть');
+
+    await catalog.pressButton(USER, 'm:new');
+    await catalog.pressButton(USER, 'u:h');
+    expect(catalog.lastButtons()).toContain('f:trx');
+    expect(catalog.lastButtons()).toContain('f:usdt');
+    expect(catalog.lastButtons()).not.toContain('f:trx:trx');
+
+    await catalog.pressButton(USER, 'f:trx');
+    expect(catalog.lastText()).not.toContain('Выберите сеть');
+
+    await catalog.pressButton(USER, 'm:new');
+    await catalog.pressButton(USER, 'u:h');
+    await catalog.pressButton(USER, 'f:usdt');
+    expect(catalog.lastText()).toContain('Выберите сеть');
+    expect(catalog.lastButtons()).toEqual(
+      expect.arrayContaining(['f:usdt:trx', 'f:usdt:bsc', 'u:b']),
+    );
   });
 
   it('команда /btc выбирает монету так же, как кнопка', async () => {
@@ -318,9 +414,14 @@ describe('бот: поиск валюты', () => {
 
     await bot.sendText(USER, '/btc');
 
-    expect(bot.lastText()).toContain('Что хотите получить');
-    expect(bot.lastButtons()).toContain('t:eth');
-    expect(bot.lastButtons()).not.toContain('t:eth:eth');
+    const text = bot.lastText();
+    expect(text).toContain('<blockquote>Отдаёте\n<b>BTC</b></blockquote>');
+    expect(text).toContain('<b>Что хотите получить?</b>');
+    expect(text).toContain('Базовые пары — кнопками ниже.');
+    expect(text).toContain('Нажмите «/» и введите тикер — появятся подсказки.');
+    expect(text).toContain('Остальные монеты — кнопка «Все валюты».');
+    expect(bot.lastButtons()).toContain('t:usdt:trx');
+    expect(bot.lastButtons()).not.toContain('t:eth');
   });
 
   it('сбрасывает меню «/» на отмене, /start и после выбора пары', async () => {

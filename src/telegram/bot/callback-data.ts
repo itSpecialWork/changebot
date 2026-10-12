@@ -5,11 +5,16 @@
  */
 import type { RateType } from '../../domain/exchanges/exchange-provider.js';
 
+export type AgreementSection = 'use' | 'risk' | 'data';
+
 export type CallbackAction =
   | { readonly kind: 'menu' }
   | { readonly kind: 'new' }
   | { readonly kind: 'list' }
   | { readonly kind: 'help' }
+  | { readonly kind: 'support' }
+  | { readonly kind: 'agreements' }
+  | { readonly kind: 'agreement'; readonly section: AgreementSection }
   | { readonly kind: 'from'; readonly ticker: string; readonly network: string }
   | { readonly kind: 'to'; readonly ticker: string; readonly network: string }
   | { readonly kind: 'ticker'; readonly side: 'from' | 'to'; readonly ticker: string }
@@ -24,7 +29,7 @@ export type CallbackAction =
   | { readonly kind: 'receipt'; readonly exchangeId: string; readonly full: boolean }
   | { readonly kind: 'currency_page'; readonly direction: 'next' | 'prev' }
   | { readonly kind: 'currency_back' }
-  | { readonly kind: 'currency_catalog'; readonly catalog: 'popular' | 'all' };
+  | { readonly kind: 'currency_catalog'; readonly catalog: 'base' | 'popular' | 'all' };
 
 const MAX_CALLBACK_BYTES = 64;
 const CODE = '[a-z0-9_-]{1,20}';
@@ -35,6 +40,11 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'm:new': { kind: 'new' },
   'm:list': { kind: 'list' },
   'm:help': { kind: 'help' },
+  'm:sup': { kind: 'support' },
+  'm:agr': { kind: 'agreements' },
+  'm:use': { kind: 'agreement', section: 'use' },
+  'm:rsk': { kind: 'agreement', section: 'risk' },
+  'm:dat': { kind: 'agreement', section: 'data' },
   's:skip': { kind: 'skip_extra_id' },
   'r:F': { kind: 'rate', rateType: 'FLOATING' },
   'r:X': { kind: 'rate', rateType: 'FIXED' },
@@ -43,6 +53,7 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'u:n': { kind: 'currency_page', direction: 'next' },
   'u:p': { kind: 'currency_page', direction: 'prev' },
   'u:b': { kind: 'currency_back' },
+  'u:s': { kind: 'currency_catalog', catalog: 'base' },
   'u:h': { kind: 'currency_catalog', catalog: 'popular' },
   'u:a': { kind: 'currency_catalog', catalog: 'all' },
 };
@@ -106,6 +117,11 @@ export const callbackData = {
   newExchange: 'm:new',
   list: 'm:list',
   help: 'm:help',
+  support: 'm:sup',
+  agreements: 'm:agr',
+  agreementUse: 'm:use',
+  agreementRisk: 'm:rsk',
+  agreementData: 'm:dat',
   skipExtraId: 's:skip',
   rate: (rateType: RateType): string => (rateType === 'FIXED' ? 'r:X' : 'r:F'),
   transferReceive: 'b:r',
@@ -124,6 +140,7 @@ export const callbackData = {
   currencyNext: 'u:n',
   currencyPrev: 'u:p',
   currencyBack: 'u:b',
+  currencyBase: 'u:s',
   currencyPopular: 'u:h',
   currencyAll: 'u:a',
 } as const;

@@ -32,6 +32,7 @@ import { ChangeNowExchangeProvider } from './integrations/changenow/change-now-e
 import { ChangeNowPrivateTransferProvider } from './integrations/changenow/change-now-private-transfer-provider.js';
 import { MockExchangeProvider } from './integrations/mock/mock-exchange-provider.js';
 import { MockPrivateTransferProvider } from './integrations/mock/mock-private-transfer-provider.js';
+import { finishedReceiptText } from './telegram/notifications/finished-receipt.js';
 import { TelegramNotificationSender } from './telegram/notifications/telegram-notification-sender.js';
 import type { DemoControls } from './telegram/bot/context.js';
 import type { Logger } from './observability/logger.js';
@@ -150,6 +151,14 @@ export function createApplication(options: ApplicationOptions): Application {
     repository: new PrismaNotificationOutboxRepository(prisma),
     sender: new TelegramNotificationSender(bot.api),
     logger,
+    followUp: async (notification) => {
+      const text = await finishedReceiptText(
+        notification,
+        (userId, exchangeId) => exchanges.getForUser(userId, exchangeId),
+        demo !== undefined,
+      );
+      return text === undefined ? undefined : { text, html: true };
+    },
   });
   const exchangeWorker = new ExchangeStatusWorker({
     poller: exchanges,

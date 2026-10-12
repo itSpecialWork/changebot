@@ -134,10 +134,42 @@ describe('NotificationService', () => {
     expect(send).toHaveBeenCalledWith(
       {
         chatId: 42n,
-        text: 'Обмен USDT → BTC\nСредства получены, ждём подтверждения сети.',
+        text: [
+          '💳 Обмен USDT → BTC',
+          '',
+          `Заявка: ${validPayload.exchangeId.slice(-8)}`,
+          '',
+          'Видим ваш платёж.',
+          'Средства будут зачислены в течение короткого времени.',
+        ].join('\n'),
       },
       { signal: expect.any(AbortSignal) as AbortSignal },
     );
+  });
+
+  it('после финала отправляет вторым сообщением квитанцию и не кладёт её в outbox', async () => {
+    repository.claimable = [claimed('n1', { payload: { ...validPayload, toStatus: 'FINISHED' } })];
+    const followUp = vi.fn(() => Promise.resolve({ text: '<b>Квитанция</b>', html: true }));
+    service = new NotificationService({
+      repository,
+      sender: { send },
+      logger,
+      now: () => START,
+      sleep,
+      followUp,
+      config: { minSendIntervalMs: 0 },
+    });
+
+    await service.dispatchDue(10);
+
+    expect(followUp).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenNthCalledWith(
+      2,
+      { chatId: 42n, text: '<b>Квитанция</b>', html: true },
+      { signal: expect.any(AbortSignal) as AbortSignal },
+    );
+    expect(repository.marks.get('n1')).toEqual({ kind: 'sent' });
+    expect(JSON.stringify(repository.claimable)).not.toContain('Квитанция');
   });
 
   it('освобождает зависшие записи с учётом lock TTL и лимита попыток', async () => {

@@ -75,7 +75,10 @@ export class TelegramNotificationSender implements NotificationSender {
       await this.api.sendMessage(
         chatId,
         message.text,
-        { link_preview_options: { is_disabled: true } },
+        {
+          link_preview_options: { is_disabled: true },
+          ...(message.html ? { parse_mode: 'HTML' as const } : {}),
+        },
         // grammY типизирует сигнал пакетом abort-controller; в рантайме это обычный AbortSignal.
         options.signal as GrammySignal,
       );

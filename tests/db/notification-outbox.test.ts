@@ -385,7 +385,7 @@ describe.skipIf(!testDatabaseUrl)('NotificationOutbox', () => {
       expect(serialized).not.toContain(result.exchange.payinAddress ?? 'no-payin');
     });
 
-    it('проверка без смены статуса уведомление не создаёт; каждый переход даёт одно', async () => {
+    it('повторная проверка не создаёт уведомление, промежуточный статус тоже', async () => {
       const user = await createTestUser(prisma);
       const exchange = await waitingDeposit(user.id);
       const providerExchangeId = exchange.providerExchangeId ?? '';
@@ -400,10 +400,7 @@ describe.skipIf(!testDatabaseUrl)('NotificationOutbox', () => {
       await exchanges.syncWithProvider(exchange.id);
 
       const rows = await outboxOf(exchange.id);
-      expect(rows.map((r) => (r.payload as { toStatus: string }).toStatus)).toEqual([
-        'CONFIRMING',
-        'EXCHANGING',
-      ]);
+      expect(rows.map((r) => (r.payload as { toStatus: string }).toStatus)).toEqual(['CONFIRMING']);
     });
 
     it('сквозной сценарий: переход → outbox → NotificationService → SENT', async () => {
@@ -428,7 +425,14 @@ describe.skipIf(!testDatabaseUrl)('NotificationOutbox', () => {
       const calls = send.mock.calls.filter(([message]) => message.chatId === user.telegramId);
       expect(calls).toHaveLength(1);
       expect(calls[0]?.[0].text).toBe(
-        'Обмен USDT → BTC\nСредства получены, ждём подтверждения сети.',
+        [
+          '💳 Обмен USDT → BTC',
+          '',
+          `Заявка: ${exchange.id.slice(-8)}`,
+          '',
+          'Видим ваш платёж.',
+          'Средства будут зачислены в течение короткого времени.',
+        ].join('\n'),
       );
       const [row] = await outboxOf(exchange.id);
       expect(row).toMatchObject({ status: 'SENT', attempts: 1, sentAt: START });

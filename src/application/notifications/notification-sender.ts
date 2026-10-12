@@ -6,8 +6,10 @@
 export interface OutgoingMessage {
   /** Идентификатор чата (для личных сообщений совпадает с Telegram ID пользователя). */
   readonly chatId: bigint;
-  /** Обычный текст без разметки. */
+  /** Текст сообщения. С html: true это разметка Telegram, иначе обычный текст. */
   readonly text: string;
+  /** Квитанция после финала. Короткий статус разметку не использует. */
+  readonly html?: boolean;
 }
 
 export interface SendOptions {
