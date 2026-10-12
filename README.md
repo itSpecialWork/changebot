@@ -3,24 +3,25 @@
 Некостодиальный сервис обмена криптовалют через ChangeNOW API.
 Подробности и архитектура: [docs/PROJECT.md](docs/PROJECT.md).
 
-**Текущий этап: инфраструктура и доменная модель данных.** Реализованы Node.js/TypeScript, Express
-(`GET /health`), PostgreSQL, Prisma-модели и миграция (`User`, `Exchange`, `ExchangeStatusHistory`,
-`NotificationOutbox`), матрица переходов статусов обмена, интерфейс `ExchangeProvider` и
-`MockExchangeProvider`, `ExchangeService` с Prisma-репозиторием (compare-and-set переходы с историей,
-идемпотентное создание, сверка статуса с провайдером), polling worker статусов (захват созревших
-обменов с lease через `FOR UPDATE SKIP LOCKED`, `ExchangeService.pollDueExchanges`,
-`ExchangeStatusWorker`), outbox уведомлений (запись в outbox атомарно со сменой статуса по данным
-провайдера, `NotificationService` с retry/backoff, rate limiting и обработкой блокировки бота,
-порт `NotificationSender`, `NotificationOutboxWorker`), Zod-конфигурация, Pino, Vitest.
+**Текущий этап: Telegram-бот обмена и перевода.** По умолчанию провайдер — мок в памяти.
+Живой ChangeNOW API v2 включается флагом `CHANGENOW_ENABLED=true` и требует `CHANGENOW_API_KEY`:
+без ключа процесс не стартует и на мок не откатывается. Private Transfer (та же монета и та же сеть)
+включается отдельно флагом `PRIVATE_TRANSFER_ENABLED`; ключ тот же. Другая сеть остаётся обычным
+обменом. Оба флага по умолчанию выключены, пустое значение тоже выключено. Подробности — в `.env.example`.
 
-**Telegram-бот (тестовый режим).** grammY, long polling, провайдер — только `MockExchangeProvider`
-(реальных обменов нет). Меню, мастер «новый обмен» (валюты → тип курса → сумма → адрес → memo →
-подтверждение), карточки обменов, отмена, кнопка «⏩ Демо: следующий статус» для прохождения всего
-жизненного цикла, уведомления через outbox. Адаптер `NotificationSender` на grammY переводит ошибки
-Telegram (403 / 429 / 400) в `NotificationSendError`. Весь Telegram-код живёт в `src/telegram/`.
-Сервисы и worker'ы подключены в `src/compose.ts`.
-Реального клиента ChangeNOW и кошельков пока нет; обработка истечения черновиков/котировок и
-восстановление `CREATING` worker'ом не реализованы.
+Уже есть Express (`GET /health`), PostgreSQL, Prisma (`User`, `Exchange`, `ExchangeStatusHistory`,
+`NotificationOutbox`), матрица статусов, `ExchangeService` (compare-and-set, идемпотентное создание,
+сверка с провайдером), polling worker (lease через `FOR UPDATE SKIP LOCKED`) и outbox уведомлений
+с retry, rate limiting и обработкой блокировки бота. Кошельки и Telegram Mini App в этот этап не входят.
+Webhook статусов нет. Обмен, зависший в `CREATING` без id провайдера, worker сам не поднимает.
+
+**Telegram-бот.** grammY, long polling. Меню, мастер «новый обмен»: валюты с подсказками «/»,
+тип курса, сумма, адрес, memo, подтверждение. Та же монета и сеть пропускают тип курса: пользователь
+указывает сумму получения или сумму, которая у него есть. Карточки обменов, отмена, уведомления
+через outbox. Кнопка «⏩ Демо: следующий статус» есть только у тестового провайдера.
+Адаптер `NotificationSender` на grammY переводит ошибки Telegram (403 / 429 / 400) в
+`NotificationSendError`. Весь Telegram-код живёт в `src/telegram/`. Сервисы и worker'ы подключены
+в `src/compose.ts`.
 
 ### Запуск бота
 
@@ -29,9 +30,10 @@ Telegram (403 / 429 / 400) в `NotificationSendError`. Весь Telegram-код 
 2. `npm run db:up && npx prisma migrate deploy && npm run dev`.
 3. Откройте бота в Telegram и отправьте `/start`.
 
-Без `TELEGRAM_BOT_TOKEN` запускается только HTTP-сервер. Состояние mock-провайдера живёт в памяти:
+Без `TELEGRAM_BOT_TOKEN` запускается только HTTP-сервер. Состояние мок-провайдера живёт в памяти:
 после перезапуска старые тестовые обмены остаются в БД, но провайдер их уже «не помнит»
-(опрос статуса будет откладываться с backoff).
+(опрос статуса будет откладываться с backoff). При включённом ChangeNOW статус хранит провайдер,
+перезапуск процесса его не стирает.
 
 ## Требования
 
@@ -104,7 +106,7 @@ src/
   domain/          # чистая доменная логика: статусы обмена и переходы, порт ExchangeProvider,
                    # арифметика десятичных сумм (строки, без Float)
   telegram/        # весь Telegram: bot/ (интерфейс grammY) и notifications/ (отправка из outbox)
-  integrations/    # внешние провайдеры обмена (пока MockExchangeProvider в памяти)
+  integrations/    # мок в памяти и адаптер ChangeNOW API v2 (обмен и Private Transfer)
   compose.ts       # composition root: сервисы, worker'ы и бот
   http/            # Express-приложение, /health, graceful shutdown
   workers/         # фоновые циклы (ExchangeStatusWorker): только расписание, логика в application

@@ -1,33 +1,65 @@
 # Agent instructions
 
-Read docs/PROJECT.md before planning or changing code.
+Отвечай на русском пользователю.
 
-Отвечай на русском пользователю
+Перед планированием прочитай этот файл. `docs/PROJECT.md` — архитектура и запреты. Не перечитывай весь репозиторий, если задача помещается в границы ниже.
 
-Work in small stages. Do not implement future roadmap items unless explicitly requested.
+Работай маленькими шагами. Не делай пункты будущего roadmap, пока их прямо не попросили.
 
-Before editing:
+## Уже сделано, не переделывать
 
-1. inspect the relevant files;
-2. explain the proposed scope;
-3. identify security-sensitive changes.
+Обычный обмен и Private Transfer уже проходили реальными средствами при включённых флагах. Повторно их не создавай и не «проверяй боем».
 
-After editing:
+- Обмен: ChangeNOW API v2, флаг `CHANGENOW_ENABLED`. По умолчанию `false` — мок в памяти.
+- Private Transfer: та же монета и та же сеть, флаг `PRIVATE_TRANSFER_ENABLED`. По умолчанию `false`. Ключ тот же, `CHANGENOW_API_KEY`. Другая сеть остаётся обычным обменом.
+- На переводе пользователь выбирает, что вводит: сумму получения или сумму, которая у него есть. От суммы отправителя получение считается пропорцией с округлением вниз, чтобы к отправке вышло не больше введённого. Котировка по-прежнему запрашивается суммой получения.
+- Оба флага включаются только строкой `true`. Пустое значение — выключено. Без ключа при включённом обмене процесс не стартует и на мок молча не откатывается.
+- Создание заявки требует `providerStatus`. Без него `WAITING_DEPOSIT` не сохраняется. Ответ Private Transfer статуса не содержит, адаптер ставит `new`.
+- Суммы — только Decimal или строки. Float запрещён.
+- Бизнес-правила живут в `src/application` и `src/domain`. Telegram — в `src/telegram`, HTTP — в `src/http`. Обработчики бота только собирают ввод и вызывают `ExchangeService`.
+- Схема Prisma без отдельной просьбы не меняется.
 
-1. run formatting;
-2. run lint;
-3. run typecheck;
-4. run tests;
-5. summarize changed files and remaining risks.
+## Memo
 
-Never:
+Решение уже принято.
 
-- use Float for monetary values;
-- hardcode secrets;
-- add real credentials;
-- execute real exchanges;
-- store private keys or seed phrases;
-- put business logic in Telegram handlers or HTTP routes;
-- silently change the database schema.
+- `isExtraIdSupported` — адрес получения может принять Memo/Tag, но не обязан. Шаг необязательный: текст и кнопка «Пропустить» в одном ряду с «Отмена».
+- `hasExternalId` — memo депозита ChangeNOW. Его показывает инструкция оплаты (`payinExtraId`). Из-за этого поля выплату обязательной не делать.
+- Обязательный memo без «Пропустить» остаётся только там, где домен сам ставит `extraId: 'required'` (в моке это XRP). Живой каталог ChangeNOW так больше не помечает.
+- Пропуск destination tag при отправке на биржу может потерять средства. Текст шага должен по-прежнему просить memo, если он нужен кошельку получателя.
+- Каталог валют кэшируется в памяти процесса. После смены правил каталога бот нужно перезапустить.
 
-Use official current documentation for library APIs. Prefer simple code over unnecessary abstractions, but preserve domain boundaries.
+## Следующая задача
+
+Настройка внешнего вида Telegram. Меняй тексты, раскладку кнопок и карточки в `src/telegram/bot`:
+
+- `format.ts`, `keyboards.ts`, `ui.ts`
+- `handlers/menu.ts`, `handlers/new-exchange.ts`, `handlers/exchanges.ts`
+
+Не меняй создание обмена, маппинг провайдера, флаги, статусы и схему базы, если визуал можно сделать без этого. Сохраняй экранирование HTML. Адреса, memo и суммы по-прежнему не клади в payload outbox.
+
+Диалог обмена уже такой: валюта отправки → валюта получения → тип курса → сумма → адрес → memo, если он поддерживается → подтверждение. Та же монета и сеть пропускают тип курса и спрашивают, какую сумму указать: получение или то, что есть у отправителя.
+
+## Перед правкой
+
+1. Посмотри только файлы этой задачи.
+2. Назови объём.
+3. Отметь, если правка касается денег, адресов, memo, ключей или статусов.
+
+## После правки
+
+1. Форматирование.
+2. Lint.
+3. Typecheck.
+4. Тесты.
+5. Список изменённых файлов и оставшийся риск.
+
+`npm test` гоняет модульные тесты. `tests/db` пропускаются без `TEST_DATABASE_URL`. Это нормально, а не поломка.
+
+## Запрещено
+
+- Хранить и логировать API-ключи, токен бота, приватные ключи и seed-фразы.
+- Подставлять реальные секреты в код, тесты и коммиты.
+- Создавать реальные обмены и переводы из тестов и из агента.
+- Менять `git config`.
+- Коммитить и пушить без прямой просьбы. Remote — HTTPS `origin`. Если `git push` молчит, он ждёт логин GitHub, а не выполняет обмен.
