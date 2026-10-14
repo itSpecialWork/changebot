@@ -93,6 +93,12 @@ export interface CreateDraftInput {
   readonly toCurrency: string;
   readonly toNetwork: string;
   readonly fromAmount: string;
+  /**
+   * Сумма получения. Заполняется только для «Получить»: fromAmount тогда — депозит
+   * из обратной котировки, а создание идёт фиксированным type=reverse.
+   */
+  readonly toAmount?: string;
+  readonly direction?: 'send' | 'receive';
   readonly rateType: RateType;
   readonly payoutAddress: string;
   readonly payoutExtraId?: string | null;
@@ -103,6 +109,7 @@ export interface CreateDraftInput {
 export interface PreviewQuoteInput extends CurrencyPair {
   readonly fromAmount: string;
   readonly rateType: RateType;
+  readonly direction?: 'send' | 'receive';
 }
 
 export interface AmountRangeInput extends CurrencyPair {
@@ -143,6 +150,11 @@ const CANCELLABLE_STATUSES: readonly ExchangeStatus[] = [
   'QUOTED',
   'AWAITING_CONFIRMATION',
 ];
+
+/** Обратный обмен узнаётся по ключу идемпотентности: отдельной колонки в схеме нет. */
+function isReceiveExchange(exchange: { readonly idempotencyKey: string }): boolean {
+  return exchange.idempotencyKey.startsWith('receive:');
+}
 
 interface MoveOptions {
   readonly nextCheckAt: Date | null;
@@ -226,10 +238,11 @@ export class ExchangeService {
     requireNonEmpty(input.clientRequestId, 'clientRequestId');
     requireNonEmpty(input.payoutAddress, 'payoutAddress');
     const amounts = this.exchangeDraftAmounts(input);
+    const receive = input.direction === 'receive';
     const draft = {
       userId: input.userId,
       provider: this.providerKind,
-      idempotencyKey: `exchange:${input.userId}:${input.clientRequestId}`,
+      idempotencyKey: `${receive ? 'receive' : 'exchange'}:${input.userId}:${input.clientRequestId}`,
       fromCurrency: input.fromCurrency,
       fromNetwork: input.fromNetwork,
       toCurrency: input.toCurrency,
@@ -252,6 +265,7 @@ export class ExchangeService {
         exchange.toCurrency === draft.toCurrency &&
         exchange.toNetwork === draft.toNetwork &&
         exchange.expectedFromAmount === draft.expectedFromAmount &&
+        exchange.expectedToAmount === draft.expectedToAmount &&
         exchange.rateType === draft.rateType &&
         exchange.payoutAddress === draft.payoutAddress &&
         exchange.payoutExtraId === draft.payoutExtraId &&
@@ -281,7 +295,8 @@ export class ExchangeService {
         toCurrency: input.toCurrency,
         toNetwork: input.toNetwork,
         fromAmount: normalizeAmount(input.fromAmount),
-        rateType: input.rateType,
+        rateType: input.direction === 'receive' ? 'FIXED' : input.rateType,
+        ...(input.direction === 'receive' ? { direction: 'receive' as const } : {}),
       },
       this.callOptions(),
     );
@@ -355,14 +370,18 @@ export class ExchangeService {
     const exchange = await this.loadOwned(userId, exchangeId);
     this.requireStatus(exchange, 'DRAFT');
 
+    const receive = isReceiveExchange(exchange);
     const quote = await this.provider.getQuote(
       {
         fromCurrency: exchange.fromCurrency,
         fromNetwork: exchange.fromNetwork,
         toCurrency: exchange.toCurrency,
         toNetwork: exchange.toNetwork,
-        fromAmount: exchange.expectedFromAmount,
-        rateType: exchange.rateType,
+        fromAmount: receive
+          ? this.requireValue(exchange.expectedToAmount, 'expectedToAmount')
+          : exchange.expectedFromAmount,
+        rateType: receive ? 'FIXED' : exchange.rateType,
+        ...(receive ? { direction: 'receive' as const } : {}),
       },
       this.callOptions(),
     );
@@ -371,7 +390,12 @@ export class ExchangeService {
       quote.expiresAt ?? new Date(this.now().getTime() + this.config.floatingQuoteTtlMs);
     return this.move(exchange, 'QUOTED', 'quote_obtained', {
       nextCheckAt: quoteExpiresAt,
-      patch: { expectedToAmount: quote.toAmount, providerRateId: quote.rateId, quoteExpiresAt },
+      patch: {
+        ...(receive ? { expectedFromAmount: quote.fromAmount } : {}),
+        expectedToAmount: quote.toAmount,
+        providerRateId: quote.rateId,
+        quoteExpiresAt,
+      },
     });
   }
 
@@ -644,6 +668,16 @@ export class ExchangeService {
   // --- Внутренняя логика --------------------------------------------------------
 
   private exchangeDraftAmounts(input: CreateDraftInput): DraftAmounts {
+    if (input.direction === 'receive') {
+      if (input.toAmount === undefined) {
+        throw new InvalidExchangeInputError('toAmount is required to receive a fixed amount');
+      }
+      return {
+        expectedFromAmount: normalizeAmount(input.fromAmount),
+        expectedToAmount: normalizeAmount(input.toAmount),
+        rateType: 'FIXED',
+      };
+    }
     return {
       expectedFromAmount: normalizeAmount(input.fromAmount),
       expectedToAmount: null,
@@ -652,14 +686,18 @@ export class ExchangeService {
   }
 
   private async openAtProvider(creating: ExchangeRecord): Promise<CreatedLeg> {
+    const receive = isReceiveExchange(creating);
     const created = await this.provider.createExchange(
       {
         fromCurrency: creating.fromCurrency,
         fromNetwork: creating.fromNetwork,
         toCurrency: creating.toCurrency,
         toNetwork: creating.toNetwork,
-        fromAmount: creating.expectedFromAmount,
-        rateType: creating.rateType,
+        fromAmount: receive
+          ? this.requireValue(creating.expectedToAmount, 'expectedToAmount')
+          : creating.expectedFromAmount,
+        rateType: receive ? 'FIXED' : creating.rateType,
+        ...(receive ? { direction: 'receive' as const } : {}),
         payoutAddress: this.requireValue(creating.payoutAddress, 'payoutAddress'),
         payoutExtraId: creating.payoutExtraId,
         refundAddress: creating.refundAddress,

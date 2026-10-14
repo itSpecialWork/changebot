@@ -73,8 +73,9 @@ describe('бот: меню', () => {
     const text = bot.lastText();
     expect(text).toContain('монету и сеть');
     expect(text).toContain('/usdt_trc20');
-    expect(text).toContain('Курс фиксированный, если пара его поддерживает');
-    expect(text).toContain('Это сумма отправки и для одинаковой монеты в одной сети');
+    expect(text).toContain('курс при этом фиксированный');
+    expect(text).toContain('«Отправить» — сумма, которую отдаёте');
+    expect(text).toContain('«Получить» — сумма, которая должна прийти');
     expect(text).not.toContain('которую получит адресат');
     expect(text).not.toContain('Выберите тип курса');
     expect(text).toContain('/start, /menu, /exchanges, /help');
@@ -488,7 +489,7 @@ describe('бот: поиск валюты', () => {
 
   it('команда /btc выбирает монету так же, как кнопка', async () => {
     await bot.pressButton(USER, 'm:new');
-    expect(bot.lastText()).toContain('<b>Новый обмен</b>');
+    expect(bot.lastText()).toContain('<b>Отправить</b>');
     expect(bot.lastText()).toContain('<b>💸 Что вы отдаёте?</b>');
     expect(bot.lastText()).toContain('Эту монету вы отправите на обмен.');
 

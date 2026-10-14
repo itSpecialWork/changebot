@@ -111,14 +111,18 @@ export class ChangeNowExchangeProvider implements ExchangeProvider {
   async getQuote(request: QuoteRequest, options?: ProviderCallOptions): Promise<ProviderQuote> {
     const signal = this.signalFor(options);
     const url = new URL('/v2/exchange/estimated-amount', this.baseUrl);
+    const receive = request.direction === 'receive';
     url.searchParams.set('fromCurrency', request.fromCurrency);
     url.searchParams.set('toCurrency', request.toCurrency);
     url.searchParams.set('fromNetwork', request.fromNetwork);
     url.searchParams.set('toNetwork', request.toNetwork);
-    url.searchParams.set('fromAmount', request.fromAmount);
-    url.searchParams.set('flow', request.rateType === 'FIXED' ? 'fixed-rate' : 'standard');
-    url.searchParams.set('type', 'direct');
-    url.searchParams.set('useRateId', request.rateType === 'FIXED' ? 'true' : 'false');
+    url.searchParams.set(receive ? 'toAmount' : 'fromAmount', request.fromAmount);
+    url.searchParams.set(
+      'flow',
+      receive || request.rateType === 'FIXED' ? 'fixed-rate' : 'standard',
+    );
+    url.searchParams.set('type', receive ? 'reverse' : 'direct');
+    url.searchParams.set('useRateId', receive || request.rateType === 'FIXED' ? 'true' : 'false');
 
     const body = await this.request('GET', `${url.pathname}${url.search}`, undefined, signal);
     const parsed = changeNowQuoteSchema.safeParse(body);
@@ -175,20 +179,21 @@ export class ChangeNowExchangeProvider implements ExchangeProvider {
     options?: ProviderCallOptions,
   ): Promise<ProviderExchange> {
     const signal = this.signalFor(options);
+    const receive = request.direction === 'receive';
     const payload: Record<string, string> = {
       fromCurrency: request.fromCurrency,
       fromNetwork: request.fromNetwork,
       toCurrency: request.toCurrency,
       toNetwork: request.toNetwork,
-      fromAmount: request.fromAmount,
       address: request.payoutAddress,
-      flow: request.rateType === 'FIXED' ? 'fixed-rate' : 'standard',
-      type: 'direct',
+      flow: receive || request.rateType === 'FIXED' ? 'fixed-rate' : 'standard',
+      type: receive ? 'reverse' : 'direct',
     };
+    payload[receive ? 'toAmount' : 'fromAmount'] = request.fromAmount;
     if (request.payoutExtraId !== null) payload.extraId = request.payoutExtraId;
     if (request.refundAddress !== null) payload.refundAddress = request.refundAddress;
     if (request.refundExtraId !== null) payload.refundExtraId = request.refundExtraId;
-    if (request.rateType === 'FIXED') {
+    if (receive || request.rateType === 'FIXED') {
       if (request.rateId === null || request.rateId.trim() === '') {
         throw new ExchangeProviderError('INVALID_REQUEST', 'Fixed exchange requires rate id');
       }
