@@ -77,14 +77,14 @@ export function createMenuHandlers(deps: BotDependencies) {
       await clearCurrencyCommands(ctx, deps.logger);
       const name = ctx.appUser.firstName;
       const greeting = name ? `Здравствуйте, ${escapeHtml(name)}!` : 'Здравствуйте!';
-      await reply(ctx, menuText(greeting), mainMenuKeyboard());
+      await reply(ctx, menuText(greeting), mainMenuKeyboard(deps.widgetButton));
     },
 
     /** Главное меню; сбрасывает незавершённый диалог. */
     async menu(ctx: BotContext): Promise<void> {
       ctx.session.flow = undefined;
       await clearCurrencyCommands(ctx, deps.logger);
-      await show(ctx, menuText(), mainMenuKeyboard());
+      await show(ctx, menuText(), mainMenuKeyboard(deps.widgetButton));
     },
 
     async support(ctx: BotContext): Promise<void> {
@@ -138,7 +138,11 @@ export function createMenuHandlers(deps: BotDependencies) {
 
     /** Подсказка на сообщение, которое бот сейчас не ждёт. */
     async hint(ctx: BotContext): Promise<void> {
-      await reply(ctx, 'Не понял сообщение. Воспользуйтесь меню:', mainMenuKeyboard());
+      await reply(
+        ctx,
+        'Не понял сообщение. Воспользуйтесь меню:',
+        mainMenuKeyboard(deps.widgetButton),
+      );
     },
   };
 }

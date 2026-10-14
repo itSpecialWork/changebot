@@ -40,7 +40,7 @@ export function createExchangeHandlers(deps: BotDependencies) {
       const pendingAddress = ctx.session.flow?.step === 'address';
       const warning = pendingAddress ? '<b>Жду адрес, обмен ещё не создан.</b>\n\n' : '';
       if (exchanges.length === 0 && !pendingAddress) {
-        await show(ctx, 'У вас пока нет обменов.', mainMenuKeyboard());
+        await show(ctx, 'У вас пока нет обменов.', mainMenuKeyboard(deps.widgetButton));
         return;
       }
       const body =

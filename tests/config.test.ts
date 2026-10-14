@@ -19,6 +19,7 @@ describe('parseConfig', () => {
       changeNowEnabled: false,
       changeNowApiKey: undefined,
       privateTransferEnabled: false,
+      publicBaseUrl: undefined,
     });
   });
 
@@ -157,6 +158,35 @@ describe('parseConfig', () => {
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as ConfigError).message).toContain('DATABASE_URL');
       expect((error as ConfigError).message).not.toContain('super-secret');
+    }
+  });
+
+  it('принимает публичный https-адрес без пути и отбрасывает пустое значение', () => {
+    expect(parseConfig({ ...validEnv, PUBLIC_BASE_URL: '' }).publicBaseUrl).toBeUndefined();
+    expect(
+      parseConfig({ ...validEnv, PUBLIC_BASE_URL: 'https://exchange.example.com/' }).publicBaseUrl,
+    ).toBe('https://exchange.example.com');
+  });
+
+  it('не принимает http, путь и не показывает учётные данные в ошибке', () => {
+    expect(() => parseConfig({ ...validEnv, PUBLIC_BASE_URL: 'http://127.0.0.1:3000' })).toThrow(
+      ConfigError,
+    );
+    expect(() =>
+      parseConfig({ ...validEnv, PUBLIC_BASE_URL: 'https://exchange.example.com/widget' }),
+    ).toThrow(ConfigError);
+
+    const secret = 'widget-secret';
+    try {
+      parseConfig({
+        ...validEnv,
+        PUBLIC_BASE_URL: `https://user:${secret}@exchange.example.com`,
+      });
+      expect.unreachable('parseConfig должен выбросить ошибку');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as ConfigError).message).toContain('PUBLIC_BASE_URL');
+      expect((error as ConfigError).message).not.toContain(secret);
     }
   });
 });

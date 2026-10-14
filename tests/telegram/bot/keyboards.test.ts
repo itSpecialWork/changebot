@@ -3,6 +3,7 @@ import type { ProviderCurrency } from '../../../src/domain/exchanges/exchange-pr
 import {
   CURRENCY_PAGE_SIZE,
   currencyKeyboard,
+  mainMenuKeyboard,
   selectCurrencies,
 } from '../../../src/telegram/bot/keyboards.js';
 
@@ -222,5 +223,28 @@ describe('клавиатура валют', () => {
     for (const data of [...tokens, ...first, ...second]) {
       expect(Buffer.byteLength(data)).toBeLessThanOrEqual(64);
     }
+  });
+});
+
+describe('главное меню', () => {
+  it('без кнопки виджета оставляет прежний порядок', () => {
+    const rows = mainMenuKeyboard().inline_keyboard;
+    expect(rows[0]).toEqual([{ text: '🔄 Новый обмен', callback_data: 'm:new' }]);
+    expect(rows.some((row) => row.some((button) => 'web_app' in button || 'url' in button))).toBe(
+      false,
+    );
+  });
+
+  it('открывает виджет ссылкой в браузере', () => {
+    const url =
+      'https://changenow.io/embeds/exchange-widget/v2/widget.html?from=usdttrc20&to=usdttrc20';
+    const rows = mainMenuKeyboard({ url, webApp: false }).inline_keyboard;
+    expect(rows[1]).toEqual([{ text: 'Открыть обмен', url }]);
+  });
+
+  it('публичный https открывает окном Telegram', () => {
+    const url = 'https://exchange.example.com/widget';
+    const rows = mainMenuKeyboard({ url, webApp: true }).inline_keyboard;
+    expect(rows[1]).toEqual([{ text: 'Открыть обмен', web_app: { url } }]);
   });
 });

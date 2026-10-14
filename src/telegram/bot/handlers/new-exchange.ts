@@ -252,7 +252,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
   async function staleButton(ctx: BotContext): Promise<void> {
     ctx.session.flow = undefined;
     await clearCurrencyCommands(ctx, deps.logger);
-    await show(ctx, 'Эта кнопка устарела. Начните заново.', mainMenuKeyboard());
+    await show(ctx, 'Эта кнопка устарела. Начните заново.', mainMenuKeyboard(deps.widgetButton));
   }
 
   async function leaveCurrencyMenu(ctx: BotContext, flow: NewExchangeFlow): Promise<void> {
@@ -265,7 +265,11 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
   async function reportQuoteFailure(ctx: BotContext, error: unknown): Promise<void> {
     if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
       ctx.session.flow = undefined;
-      await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
+      await reply(
+        ctx,
+        escapeHtml(describeFailure(error) ?? ''),
+        mainMenuKeyboard(deps.widgetButton),
+      );
       return;
     }
     const message = describeFailure(error);
@@ -403,7 +407,11 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     } catch (error) {
       if (error instanceof ExchangeProviderError && error.code === 'PAIR_NOT_SUPPORTED') {
         ctx.session.flow = undefined;
-        await reply(ctx, escapeHtml(describeFailure(error) ?? ''), mainMenuKeyboard());
+        await reply(
+          ctx,
+          escapeHtml(describeFailure(error) ?? ''),
+          mainMenuKeyboard(deps.widgetButton),
+        );
         return;
       }
       if (!(error instanceof ExchangeProviderError)) throw error;

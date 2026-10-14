@@ -45,6 +45,11 @@ const envSchema = z.object({
    * Ключ тот же, что у обмена. Без флага сценарий не вызывается.
    */
   PRIVATE_TRANSFER_ENABLED: featureFlagSchema,
+  /**
+   * Публичный https-адрес без пути. Пустое значение — страницу виджета бот не открывает.
+   * Сам адрес в сообщение об ошибке не попадает.
+   */
+  PUBLIC_BASE_URL: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
 });
 
 export interface AppConfig {
@@ -69,6 +74,12 @@ export interface AppConfig {
    * false — провайдер перевода не создаётся, бот сценарий не вызывает.
    */
   readonly privateTransferEnabled: boolean;
+  /**
+   * Origin страницы виджета, без пути и без учётных данных.
+   * Кнопка меню открывает эту страницу ссылкой в браузере.
+   * Нет значения — ссылка ведёт на http://127.0.0.1:<порт>/widget.
+   */
+  readonly publicBaseUrl: string | undefined;
 }
 
 /**
@@ -109,5 +120,31 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     changeNowEnabled,
     changeNowApiKey: changeNowEnabled ? env.CHANGENOW_API_KEY : undefined,
     privateTransferEnabled,
+    publicBaseUrl: publicBaseOrigin(env.PUBLIC_BASE_URL),
   });
+}
+
+/** https-origin без пути, запроса и учётных данных. Значение в текст ошибки не входит. */
+function publicBaseOrigin(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new ConfigError(['PUBLIC_BASE_URL: must be an https origin']);
+  }
+
+  const bareOrigin =
+    url.protocol === 'https:' &&
+    url.username === '' &&
+    url.password === '' &&
+    (url.pathname === '/' || url.pathname === '') &&
+    url.search === '' &&
+    url.hash === '';
+  if (!bareOrigin) {
+    throw new ConfigError(['PUBLIC_BASE_URL: must be an https origin without a path']);
+  }
+
+  return url.origin;
 }

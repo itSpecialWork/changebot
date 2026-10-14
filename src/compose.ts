@@ -32,6 +32,7 @@ import { ChangeNowExchangeProvider } from './integrations/changenow/change-now-e
 import { ChangeNowPrivateTransferProvider } from './integrations/changenow/change-now-private-transfer-provider.js';
 import { MockExchangeProvider } from './integrations/mock/mock-exchange-provider.js';
 import { MockPrivateTransferProvider } from './integrations/mock/mock-private-transfer-provider.js';
+import { localWidgetPageUrl, widgetPageUrl } from './http/widget-page.js';
 import { finishedReceiptText } from './telegram/notifications/finished-receipt.js';
 import { TelegramNotificationSender } from './telegram/notifications/telegram-notification-sender.js';
 import type { DemoControls } from './telegram/bot/context.js';
@@ -145,6 +146,12 @@ export function createApplication(options: ApplicationOptions): Application {
     users,
     logger,
     ...(demo ? { demo } : {}),
+    widgetButton: {
+      url: config.publicBaseUrl
+        ? widgetPageUrl(config.publicBaseUrl)
+        : localWidgetPageUrl(config.host, config.port),
+      webApp: false,
+    },
   });
 
   const notifications = new NotificationService({

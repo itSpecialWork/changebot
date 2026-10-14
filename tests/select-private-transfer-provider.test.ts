@@ -15,6 +15,7 @@ function config(
     shutdownTimeoutMs: 1000,
     databaseUrl: 'postgresql://user:pass@127.0.0.1:5432/db',
     telegramBotToken: undefined,
+    publicBaseUrl: undefined,
     ...patch,
   };
 }

@@ -3,7 +3,7 @@ import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
 import type { ProviderCurrency } from '../../domain/exchanges/exchange-provider.js';
 import { isTerminalStatus } from '../../domain/exchanges/status-transitions.js';
 import { callbackData, isCallbackSafeCode } from './callback-data.js';
-import type { CurrencyStage, NetworkScope } from './context.js';
+import type { CurrencyStage, NetworkScope, WidgetButton } from './context.js';
 import { formatListButton, hasReceiptProof, networkLabel } from './format.js';
 
 /** Сколько валют помещается на страницу полного каталога. */
@@ -257,10 +257,14 @@ export function selectCurrencies(
   return { mode, stage, ...pageSlice(pool, state.page, size) };
 }
 
-export function mainMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('🔄 Новый обмен', callbackData.newExchange)
-    .row()
+export function mainMenuKeyboard(widgetButton?: WidgetButton): InlineKeyboard {
+  const keyboard = new InlineKeyboard().text('🔄 Новый обмен', callbackData.newExchange).row();
+  if (widgetButton?.webApp === true) {
+    keyboard.webApp('Открыть обмен', widgetButton.url).row();
+  } else if (widgetButton !== undefined) {
+    keyboard.url('Открыть обмен', widgetButton.url).row();
+  }
+  return keyboard
     .text('📋 Мои обмены', callbackData.list)
     .row()
     .text('💬 Служба поддержки', callbackData.support)

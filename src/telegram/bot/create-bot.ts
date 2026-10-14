@@ -136,7 +136,7 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
         await show(
           ctx,
           friendly ?? 'Что-то пошло не так. Попробуйте ещё раз чуть позже.',
-          mainMenuKeyboard(),
+          mainMenuKeyboard(options.widgetButton),
         );
       } catch (replyError) {
         logger.debug({ err: describeErrorForLog(replyError) }, 'Could not deliver error message');

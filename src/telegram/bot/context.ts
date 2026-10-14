@@ -98,10 +98,18 @@ export interface DemoControls {
   advanceProviderStatus(providerExchangeId: string): void;
 }
 
+/** Кнопка «Открыть обмен». `webApp` — окно Telegram и нужен https. Иначе ссылка открывается в браузере. */
+export interface WidgetButton {
+  readonly url: string;
+  readonly webApp: boolean;
+}
+
 export interface BotDependencies {
   readonly exchanges: ExchangeService;
   readonly users: UserService;
   readonly logger: Logger;
   readonly demo?: DemoControls;
   readonly now?: () => Date;
+  /** Нет значения только в тестах. В боевом процессе кнопка есть всегда. */
+  readonly widgetButton?: WidgetButton;
 }
