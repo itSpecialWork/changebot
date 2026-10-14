@@ -206,6 +206,9 @@ describe('format', () => {
     expect(card).toContain(`ID: <code>${UUID}</code>`);
     expect(card).toContain('Обмен USDT → BTC');
     expect(card).toContain('Курс: плавающий');
+    expect(card).toContain('<b>💸 Куда отправить</b>');
+    expect(card).toContain('Адрес из квитанции — это получатель, туда слать нельзя.');
+    expect(card).toContain('Отправьте ровно <b>100 USDT (trx)</b>');
     expect(card).not.toContain('Тестовый режим');
     expect(card).not.toContain('<b>Успешно</b>');
     expect(card).not.toContain('Хэш');
@@ -300,6 +303,9 @@ describe('format', () => {
 
     expect(card).toContain('<b>Перевод USDT (trx)</b>');
     expect(card).toContain('Без конвертации. Суммы действуют до 12.10, 12:00 UTC.');
+    expect(card).toContain('Сейчас сюда ничего не отправляйте.');
+    expect(card).toContain('Адрес для оплаты появится после «Подтвердить».');
+    expect(card).not.toContain('Куда отправить');
     expect(card).not.toContain('Обмен');
     expect(card).not.toContain('Курс:');
   });

@@ -281,7 +281,8 @@ describe('бот: создание обмена', () => {
     expect(live.exchangeRepository.rows.size).toBe(0);
 
     await live.sendText(USER, 'So11111111111111111111111111111111111111112');
-    expect(live.lastText()).toContain('Адрес получения');
+    expect(live.lastText()).toContain('Куда придут средства');
+    expect(live.lastText()).toContain('Сейчас сюда ничего не отправляйте.');
     expect(live.lastText()).toContain('So11111111111111111111111111111111111111112');
     expect(live.exchangeRepository.rows.size).toBe(1);
   });

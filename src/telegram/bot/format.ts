@@ -151,6 +151,7 @@ export function renderExchangeCard(exchange: ExchangeRecord, options: CardOption
         ...payoutLines(exchange),
         '',
         '⚠️ Проверьте адрес и сеть: ошибочный перевод вернуть нельзя.',
+        'Адрес для оплаты появится после «Подтвердить».',
       );
       break;
     case 'CREATING':
@@ -285,8 +286,11 @@ function rateLine(exchange: ExchangeRecord): string {
 }
 
 function payoutLines(exchange: ExchangeRecord): string[] {
+  const asset = escapeHtml(formatCurrency(exchange.toCurrency, exchange.toNetwork));
   const lines = [
-    `Адрес получения (${escapeHtml(formatCurrency(exchange.toCurrency, exchange.toNetwork))}):`,
+    '<b>📥 Куда придут средства</b>',
+    `Кошелёк получателя, <b>${asset}</b>. Сейчас сюда ничего не отправляйте.`,
+    '',
     `<code>${escapeHtml(exchange.payoutAddress ?? '—')}</code>`,
   ];
   if (exchange.payoutExtraId !== null) {
@@ -298,6 +302,9 @@ function payoutLines(exchange: ExchangeRecord): string[] {
 function depositLines(exchange: ExchangeRecord): string[] {
   const from = escapeHtml(formatCurrency(exchange.fromCurrency, exchange.fromNetwork));
   const lines = [
+    '<b>💸 Куда отправить</b>',
+    'Только на адрес ниже. Адрес из квитанции — это получатель, туда слать нельзя.',
+    '',
     `Отправьте ровно <b>${escapeHtml(exchange.expectedFromAmount)} ${from}</b> на адрес:`,
     `<code>${escapeHtml(exchange.payinAddress ?? '—')}</code>`,
   ];
