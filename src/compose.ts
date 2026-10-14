@@ -3,11 +3,7 @@
  *
  * Провайдер обмена один на процесс. По умолчанию это мок. ChangeNOW подключается только
  * при CHANGENOW_ENABLED=true и ключе из окружения. Демо-кнопка есть только у мока.
- *
- * Private Transfer — второй порт того же партнёра, не замена обмена.
- * selectPrivateTransferProvider выбирает его отдельно и передаёт в ExchangeService.
- * Без PRIVATE_TRANSFER_ENABLED провайдер перевода не создаётся, и та же монета
- * не предлагается во втором списке.
+ * Та же монета и та же сеть идут этим обменом.
  *
  * Без TELEGRAM_BOT_TOKEN бот и worker'ы не запускаются (остаются HTTP и БД).
  */
@@ -22,16 +18,10 @@ import type { PrismaClient } from './database/prisma.js';
 import { PrismaExchangeRepository } from './database/repositories/prisma-exchange-repository.js';
 import { PrismaNotificationOutboxRepository } from './database/repositories/prisma-notification-outbox-repository.js';
 import { PrismaUserRepository } from './database/repositories/prisma-user-repository.js';
-import {
-  ExchangeProviderError,
-  type ExchangeProvider,
-} from './domain/exchanges/exchange-provider.js';
+import type { ExchangeProvider } from './domain/exchanges/exchange-provider.js';
 import type { ExchangeProviderKind } from './domain/exchanges/exchange.js';
-import type { PrivateTransferProvider } from './domain/exchanges/private-transfer-provider.js';
 import { ChangeNowExchangeProvider } from './integrations/changenow/change-now-exchange-provider.js';
-import { ChangeNowPrivateTransferProvider } from './integrations/changenow/change-now-private-transfer-provider.js';
 import { MockExchangeProvider } from './integrations/mock/mock-exchange-provider.js';
-import { MockPrivateTransferProvider } from './integrations/mock/mock-private-transfer-provider.js';
 import { localWidgetPageUrl, widgetPageUrl } from './http/widget-page.js';
 import { finishedReceiptText } from './telegram/notifications/finished-receipt.js';
 import { TelegramNotificationSender } from './telegram/notifications/telegram-notification-sender.js';
@@ -95,24 +85,6 @@ export function selectExchangeProvider(config: AppConfig): SelectedExchangeProvi
   };
 }
 
-/**
- * Второй порт. undefined — сценарий выключен и вызываться не должен.
- * Живой адаптер берёт тот же ключ, что и обмен. Иначе остаётся мок в памяти.
- */
-export function selectPrivateTransferProvider(
-  config: AppConfig,
-): PrivateTransferProvider | undefined {
-  if (!config.privateTransferEnabled) return undefined;
-  if (config.changeNowEnabled) {
-    const apiKey = config.changeNowApiKey;
-    if (apiKey === undefined) {
-      throw new ConfigError(['CHANGENOW_API_KEY: is required when CHANGENOW_ENABLED is true']);
-    }
-    return new ChangeNowPrivateTransferProvider({ apiKey });
-  }
-  return new MockPrivateTransferProvider();
-}
-
 export function createApplication(options: ApplicationOptions): Application {
   const { config, prisma, logger } = options;
 
@@ -129,14 +101,12 @@ export function createApplication(options: ApplicationOptions): Application {
   }
 
   const selected = selectExchangeProvider(config);
-  const privateTransfer = selectPrivateTransferProvider(config);
-  const demo = combineDemo(selected.demo, privateTransfer);
+  const demo = selected.demo;
   const exchanges = new ExchangeService({
     repository: new PrismaExchangeRepository(prisma),
     provider: selected.provider,
     providerKind: selected.providerKind,
     logger,
-    ...(privateTransfer ? { privateTransfer } : {}),
   });
   const users = new UserService(new PrismaUserRepository(prisma));
 
@@ -190,31 +160,6 @@ export function createApplication(options: ApplicationOptions): Application {
       await bot.stop();
       await exchangeWorker.stop();
       await outboxWorker.stop();
-    },
-  };
-}
-
-/**
- * Демо-кнопка есть только у тестового обмена. Если рядом работает тестовый перевод,
- * кнопка двигает ту запись, которой принадлежит id.
- */
-function combineDemo(
-  exchangeDemo: DemoControls | undefined,
-  privateTransfer: PrivateTransferProvider | undefined,
-): DemoControls | undefined {
-  if (exchangeDemo === undefined) return undefined;
-  if (!(privateTransfer instanceof MockPrivateTransferProvider)) return exchangeDemo;
-  return {
-    advanceProviderStatus(id: string): void {
-      try {
-        exchangeDemo.advanceProviderStatus(id);
-      } catch (error) {
-        if (error instanceof ExchangeProviderError && error.code === 'NOT_FOUND') {
-          privateTransfer.advanceStatus(id);
-          return;
-        }
-        throw error;
-      }
     },
   };
 }

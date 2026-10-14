@@ -74,8 +74,8 @@ describe('бот: меню', () => {
     expect(text).toContain('монету и сеть');
     expect(text).toContain('/usdt_trc20');
     expect(text).toContain('Курс фиксированный, если пара его поддерживает');
-    expect(text).toContain('которую получит адресат');
-    expect(text).toContain('которая есть у вас');
+    expect(text).toContain('Это сумма отправки и для одинаковой монеты в одной сети');
+    expect(text).not.toContain('которую получит адресат');
     expect(text).not.toContain('Выберите тип курса');
     expect(text).toContain('/start, /menu, /exchanges, /help');
   });

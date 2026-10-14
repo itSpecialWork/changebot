@@ -18,7 +18,6 @@ describe('parseConfig', () => {
       databaseUrl: validEnv.DATABASE_URL,
       changeNowEnabled: false,
       changeNowApiKey: undefined,
-      privateTransferEnabled: false,
       publicBaseUrl: undefined,
     });
   });
@@ -108,41 +107,6 @@ describe('parseConfig', () => {
         expect.unreachable('parseConfig должен выбросить ошибку');
       } catch (error) {
         expect(error).toBeInstanceOf(ConfigError);
-        expect((error as ConfigError).message).not.toContain(secret);
-      }
-    });
-  });
-
-  describe('PRIVATE_TRANSFER_ENABLED', () => {
-    const secret = 'super-secret-key';
-
-    it('по умолчанию выключен и не сохраняет ключ обмена', () => {
-      expect(parseConfig(validEnv).privateTransferEnabled).toBe(false);
-      expect(
-        parseConfig({ ...validEnv, PRIVATE_TRANSFER_ENABLED: '', CHANGENOW_API_KEY: secret })
-          .changeNowApiKey,
-      ).toBeUndefined();
-    });
-
-    it('включается строкой true и не требует отдельного ключа', () => {
-      const config = parseConfig({
-        ...validEnv,
-        PRIVATE_TRANSFER_ENABLED: 'true',
-        CHANGENOW_API_KEY: secret,
-      });
-
-      expect(config.privateTransferEnabled).toBe(true);
-      expect(config.changeNowEnabled).toBe(false);
-      expect(config.changeNowApiKey).toBeUndefined();
-    });
-
-    it('отклоняет постороннее значение и не раскрывает его', () => {
-      try {
-        parseConfig({ ...validEnv, PRIVATE_TRANSFER_ENABLED: secret });
-        expect.unreachable('parseConfig должен выбросить ошибку');
-      } catch (error) {
-        expect(error).toBeInstanceOf(ConfigError);
-        expect((error as ConfigError).message).toContain('PRIVATE_TRANSFER_ENABLED');
         expect((error as ConfigError).message).not.toContain(secret);
       }
     });

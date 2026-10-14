@@ -95,6 +95,9 @@ export const DEFAULT_MOCK_RATES: Readonly<Record<string, string>> = {
   'eth:eth>btc:btc': '0.05',
   'usdt:trx>xrp:xrp': '2',
   'usdt:trx>xlm:xlm': '10',
+  'usdt:trx>usdt:trx': '0.979',
+  'xrp:xrp>xrp:xrp': '0.99',
+  'xlm:xlm>xlm:xlm': '0.99',
 };
 
 export interface MockExchangeProviderOptions {

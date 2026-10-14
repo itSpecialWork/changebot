@@ -21,7 +21,6 @@ export type CallbackAction =
   | { readonly kind: 'to'; readonly ticker: string; readonly network: string }
   | { readonly kind: 'ticker'; readonly side: 'from' | 'to'; readonly ticker: string }
   | { readonly kind: 'rate'; readonly rateType: RateType }
-  | { readonly kind: 'transfer_basis'; readonly basis: 'receive' | 'spend' }
   | { readonly kind: 'skip_extra_id' }
   | { readonly kind: 'open'; readonly exchangeId: string }
   | { readonly kind: 'prepare'; readonly exchangeId: string }
@@ -52,8 +51,6 @@ const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   's:skip': { kind: 'skip_extra_id' },
   'r:F': { kind: 'rate', rateType: 'FLOATING' },
   'r:X': { kind: 'rate', rateType: 'FIXED' },
-  'b:r': { kind: 'transfer_basis', basis: 'receive' },
-  'b:s': { kind: 'transfer_basis', basis: 'spend' },
   'u:n': { kind: 'currency_page', direction: 'next' },
   'u:p': { kind: 'currency_page', direction: 'prev' },
   'u:b': { kind: 'currency_back' },
@@ -130,8 +127,6 @@ export const callbackData = {
   agreementData: 'm:dat',
   skipExtraId: 's:skip',
   rate: (rateType: RateType): string => (rateType === 'FIXED' ? 'r:X' : 'r:F'),
-  transferReceive: 'b:r',
-  transferSpend: 'b:s',
   from: (ticker: string, network: string): string => checked(`f:${ticker}:${network}`),
   to: (ticker: string, network: string): string => checked(`t:${ticker}:${network}`),
   ticker: (side: 'from' | 'to', ticker: string): string =>

@@ -6,7 +6,7 @@
  * выбирает её сразу. Тип курса не спрашивается: фиксированный, если пара его поддерживает,
  * иначе плавающий.
  *
- * Та же монета и та же сеть — перевод без конвертации. Другая сеть идёт обычным обменом.
+ * Та же монета и та же сеть идут этим же обменом: ввод — сумма отправки.
  *
  * Обработчики собирают ввод и вызывают ExchangeService; проверки пары, суммы и сети
  * выполняет сервис и провайдер. Состояние диалога живёт в сессии (память процесса).
@@ -25,13 +25,7 @@ import {
   formatDecimal,
   parseDecimal,
 } from '../../../domain/shared/decimal-string.js';
-import type {
-  BotContext,
-  BotDependencies,
-  CurrencyChoice,
-  NewExchangeFlow,
-  TransferAmountBasis,
-} from '../context.js';
+import type { BotContext, BotDependencies, CurrencyChoice, NewExchangeFlow } from '../context.js';
 import {
   clearCurrencyCommands,
   parseCurrencyCommand,
@@ -46,7 +40,6 @@ import {
   mainMenuKeyboard,
   selectCurrencies,
   skipExtraIdKeyboard,
-  transferBasisKeyboard,
   type CurrencySelection,
 } from '../keyboards.js';
 import { parseAddressInput, parseAmountInput, parseExtraIdInput } from '../input.js';
@@ -65,49 +58,7 @@ function label(choice: CurrencyChoice): string {
   return formatCurrency(choice.ticker, choice.network);
 }
 
-function sameCurrency(a: CurrencyChoice, b: CurrencyChoice): boolean {
-  return a.ticker === b.ticker && a.network === b.network;
-}
-
 const MAX_CURRENCY_QUERY = 32;
-
-function transferBasisPrompt(currencyLabel: string): string {
-  const labelHtml = escapeHtml(currencyLabel);
-  return [
-    `<blockquote>Перевод без конвертации\n<b>${labelHtml} → ${labelHtml}</b></blockquote>`,
-    '',
-    '<b>✏️ Что вы указываете?</b>',
-    'Нажмите одну кнопку. Сумму спросим следующим сообщением.',
-    '',
-    '<b>📥 Адресат получит</b>',
-    '',
-    'Сколько должно прийти на адрес.',
-    'Сколько отправить — посчитаем мы.',
-    '',
-    '<b>👛 У меня есть сумма</b>',
-    '',
-    'Сколько есть у вас.',
-    'Сколько придёт — посчитаем мы.',
-    '',
-    '⚠️ К отправке будет не больше этой суммы.',
-  ].join('\n');
-}
-
-function receiveAmountPrompt(currencyLabel: string): string {
-  const labelHtml = escapeHtml(currencyLabel);
-  return [
-    `Введите сумму, которую должен получить адресат, в <b>${labelHtml}</b>.`,
-    'Мы посчитаем, сколько нужно отправить.',
-  ].join('\n');
-}
-
-function spendAmountPrompt(currencyLabel: string): string {
-  const labelHtml = escapeHtml(currencyLabel);
-  return [
-    `Введите сумму, которая у вас есть, в <b>${labelHtml}</b>.`,
-    'Мы посчитаем, сколько получит адресат. Отправить нужно будет не больше этой суммы.',
-  ].join('\n');
-}
 
 function amountPrompt(currencyLabel: string, range: ProviderAmountRange | undefined): string {
   const lines = [`Введите сумму, которую хотите отдать, в <b>${escapeHtml(currencyLabel)}</b>.`];
@@ -285,14 +236,7 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     return currencies.find((c) => c.ticker === ticker && c.network === network);
   }
 
-  async function currenciesFor(flow: NewExchangeFlow): Promise<readonly ProviderCurrency[]> {
-    const from = flow.from;
-    if (flow.step === 'to' && from) {
-      return deps.exchanges.listDestinationCurrencies({
-        ticker: from.ticker,
-        network: from.network,
-      });
-    }
+  function currenciesFor(_flow: NewExchangeFlow): Promise<readonly ProviderCurrency[]> {
     return deps.exchanges.listCurrencies();
   }
 
@@ -444,7 +388,6 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
       clientRequestId: flow.id,
       ...pair,
       fromAmount: amount,
-      ...(deps.exchanges.isPrivateTransferSelection(pair) ? { toAmount: amount } : {}),
       rateType,
       payoutAddress,
       payoutExtraId: extraId,
@@ -484,48 +427,6 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     const outOfRange = amountOutOfRangeText(amount, flow);
     if (outOfRange !== undefined) {
       await reply(ctx, outOfRange, cancelFlowKeyboard());
-      return;
-    }
-
-    const pair = {
-      fromCurrency: from.ticker,
-      fromNetwork: from.network,
-      toCurrency: to.ticker,
-      toNetwork: to.network,
-    };
-    if (deps.exchanges.isPrivateTransferSelection(pair)) {
-      if (flow.amountBasis !== 'receive' && flow.amountBasis !== 'spend') {
-        await staleButton(ctx);
-        return;
-      }
-      try {
-        const estimate =
-          flow.amountBasis === 'spend'
-            ? await deps.exchanges.previewPrivateTransferSpend({
-                currency: from.ticker,
-                network: from.network,
-                fromAmount: amount,
-              })
-            : await deps.exchanges.previewPrivateTransfer({
-                currency: from.ticker,
-                network: from.network,
-                toAmount: amount,
-              });
-        flow.amount = estimate.toAmount;
-        flow.step = 'address';
-        await reply(
-          ctx,
-          [
-            `Адресат получит <b>${escapeHtml(estimate.toAmount)} ${escapeHtml(label(to))}</b>.`,
-            `К отправке: <b>${escapeHtml(estimate.fromAmount)} ${escapeHtml(label(from))}</b>.`,
-            '',
-            payoutPrompt(label(to), demo),
-          ].join('\n'),
-          cancelFlowKeyboard(),
-        );
-      } catch (error) {
-        await reportQuoteFailure(ctx, error);
-      }
       return;
     }
 
@@ -669,25 +570,6 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
     }
     const to = toChoice(currency);
     await leaveCurrencyMenu(ctx, flow);
-    const pair = {
-      fromCurrency: flow.from.ticker,
-      fromNetwork: flow.from.network,
-      toCurrency: to.ticker,
-      toNetwork: to.network,
-    };
-    if (deps.exchanges.isPrivateTransferSelection(pair)) {
-      flow.to = to;
-      flow.rateType = 'FIXED';
-      flow.step = 'transfer_basis';
-      delete flow.amountRange;
-      delete flow.amountBasis;
-      await show(ctx, transferBasisPrompt(label(to)), transferBasisKeyboard());
-      return;
-    }
-    if (sameCurrency(flow.from, to)) {
-      await staleButton(ctx);
-      return;
-    }
     flow.to = to;
     flow.rateType = chosenRateType(flow.from, to);
     await showAmountStep(ctx, flow);
@@ -800,19 +682,6 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
 
     selectTo,
 
-    async selectTransferBasis(ctx: BotContext, basis: TransferAmountBasis): Promise<void> {
-      const flow = ctx.session.flow;
-      if (flow?.step !== 'transfer_basis' || !flow.to) {
-        await staleButton(ctx);
-        return;
-      }
-      flow.amountBasis = basis;
-      flow.step = 'amount';
-      const prompt =
-        basis === 'spend' ? spendAmountPrompt(label(flow.to)) : receiveAmountPrompt(label(flow.to));
-      await show(ctx, prompt, cancelFlowKeyboard());
-    },
-
     async selectRate(ctx: BotContext): Promise<void> {
       await staleButton(ctx);
     },
@@ -869,9 +738,6 @@ export function createNewExchangeHandlers(deps: BotDependencies) {
         case 'from':
         case 'to':
           await onCurrencyQuery(ctx, flow, text);
-          break;
-        case 'transfer_basis':
-          await reply(ctx, 'Выберите, какую сумму указать: кнопкой ниже.', transferBasisKeyboard());
           break;
         case 'amount':
           await onAmount(ctx, flow, text);

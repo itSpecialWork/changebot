@@ -41,14 +41,6 @@ describe('callback data', () => {
       kind: 'rate',
       rateType: 'FIXED',
     });
-    expect(parseCallbackData(callbackData.transferReceive)).toEqual({
-      kind: 'transfer_basis',
-      basis: 'receive',
-    });
-    expect(parseCallbackData(callbackData.transferSpend)).toEqual({
-      kind: 'transfer_basis',
-      basis: 'spend',
-    });
     expect(parseCallbackData(callbackData.receipt(UUID))).toEqual({
       kind: 'receipt',
       exchangeId: UUID,
@@ -280,15 +272,15 @@ describe('format', () => {
     expect(refunded).not.toContain('Хэш депозита');
   });
 
-  it('ту же монету и сеть называет переводом без курса', () => {
+  it('ту же монету и сеть называет обычным обменом', () => {
     const exchange = {
       id: UUID,
       fromCurrency: 'usdt',
       fromNetwork: 'trx',
       toCurrency: 'usdt',
       toNetwork: 'trx',
-      expectedFromAmount: '101',
-      expectedToAmount: '100',
+      expectedFromAmount: '1000',
+      expectedToAmount: '979',
       actualToAmount: null,
       rateType: 'FIXED',
       quoteExpiresAt: new Date('2026-10-12T12:00:00Z'),
@@ -301,13 +293,12 @@ describe('format', () => {
 
     const card = renderExchangeCard(exchange, { demo: false });
 
-    expect(card).toContain('<b>Перевод USDT (trx)</b>');
-    expect(card).toContain('Без конвертации. Суммы действуют до 12.10, 12:00 UTC.');
-    expect(card).toContain('Сейчас сюда ничего не отправляйте.');
-    expect(card).toContain('Адрес для оплаты появится после «Подтвердить».');
-    expect(card).not.toContain('Куда отправить');
-    expect(card).not.toContain('Обмен');
-    expect(card).not.toContain('Курс:');
+    expect(card).toContain('<b>Обмен USDT → USDT</b>');
+    expect(card).toContain('Отдаёте: <b>1000 USDT (trx)</b>');
+    expect(card).toContain('Получите: <b>979 USDT (trx)</b>');
+    expect(card).toContain('Курс: фиксированный, действует до 12.10, 12:00 UTC');
+    expect(card).not.toContain('Перевод');
+    expect(card).not.toContain('Без конвертации');
   });
 
   it('ту же монету в другой сети оставляет обменом с типом курса', () => {

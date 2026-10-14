@@ -369,15 +369,6 @@ function breakRow(keyboard: InlineKeyboard): void {
   if (last === undefined || last.length > 0) keyboard.row();
 }
 
-/** Что указать в переводе одной монеты: сумму получателя или сумму отправителя. */
-export function transferBasisKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('Адресат получит', callbackData.transferReceive)
-    .text('У меня есть сумма', callbackData.transferSpend)
-    .row()
-    .text('❌ Отмена', callbackData.menu);
-}
-
 export function cancelFlowKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('❌ Отмена', callbackData.menu);
 }

@@ -22,16 +22,13 @@ export interface CurrencyChoice {
   readonly extraId: ExtraIdRequirement;
 }
 
-export type FlowStep = 'from' | 'to' | 'transfer_basis' | 'amount' | 'address' | 'extra_id';
+export type FlowStep = 'from' | 'to' | 'amount' | 'address' | 'extra_id';
 
 /** Сначала имя монеты, затем её сети. */
 export type CurrencyStage = 'token' | 'network';
 
 /** Откуда открыт экран сети: короткий список или весь каталог этой монеты. */
 export type NetworkScope = 'popular' | 'all';
-
-/** В переводе одной монеты: сумма получателя или сумма, которая есть у отправителя. */
-export type TransferAmountBasis = 'receive' | 'spend';
 
 /**
  * Незавершённый диалог «новый обмен». Живёт только в памяти (до 30 минут бездействия):
@@ -44,13 +41,8 @@ export interface NewExchangeFlow {
   from?: CurrencyChoice;
   to?: CurrencyChoice;
   rateType?: RateType;
-  /**
-   * Сумма в нормализованном виде (десятичная строка).
-   * Для обмена это сумма отправки, для перевода одной монеты — сумма получения.
-   */
+  /** Сумма отправки в нормализованном виде (десятичная строка). */
   amount?: string;
-  /** Какую сумму ввёл пользователь на переводе одной монеты. */
-  amountBasis?: TransferAmountBasis;
   payoutAddress?: string;
   /** Фильтр списка монет. Пустая строка — без поиска. */
   currencyQuery: string;

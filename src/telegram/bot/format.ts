@@ -3,7 +3,6 @@
  * (адреса, memo, тикеры), экранируются.
  */
 import type { ExchangeRecord } from '../../domain/exchanges/exchange.js';
-import { isSameAsset } from '../../domain/exchanges/private-transfer-provider.js';
 import type { ExchangeStatus } from '../../domain/exchanges/status-transitions.js';
 
 export function escapeHtml(text: string): string {
@@ -241,20 +240,7 @@ function receiveAmountLine(exchange: ExchangeRecord): string | undefined {
   return undefined;
 }
 
-function isTransfer(exchange: ExchangeRecord): boolean {
-  return isSameAsset(
-    exchange.fromCurrency,
-    exchange.fromNetwork,
-    exchange.toCurrency,
-    exchange.toNetwork,
-  );
-}
-
 function cardTitle(exchange: ExchangeRecord): string {
-  if (isTransfer(exchange)) {
-    const asset = escapeHtml(formatCurrency(exchange.fromCurrency, exchange.fromNetwork));
-    return `<b>Перевод ${asset}</b>`;
-  }
   return `<b>Обмен ${escapeHtml(formatPair(exchange))}</b>`;
 }
 
@@ -270,12 +256,6 @@ function receiptTimingLine(exchange: ExchangeRecord): string {
 }
 
 function rateLine(exchange: ExchangeRecord): string {
-  if (isTransfer(exchange)) {
-    const until = exchange.quoteExpiresAt
-      ? ` Суммы действуют до ${formatTime(exchange.quoteExpiresAt)}.`
-      : '';
-    return `Без конвертации.${until}`;
-  }
   if (exchange.rateType === 'FIXED') {
     const until = exchange.quoteExpiresAt
       ? `, действует до ${formatTime(exchange.quoteExpiresAt)}`
@@ -311,12 +291,7 @@ function depositLines(exchange: ExchangeRecord): string[] {
   if (exchange.payinExtraId !== null) {
     lines.push(`Memo/Tag (обязательно): <code>${escapeHtml(exchange.payinExtraId)}</code>`);
   }
-  lines.push(
-    '',
-    isTransfer(exchange)
-      ? 'Мы сообщим, когда средства поступят и перевод продвинется дальше.'
-      : 'Мы сообщим, когда средства поступят и обмен продвинется дальше.',
-  );
+  lines.push('', 'Мы сообщим, когда средства поступят и обмен продвинется дальше.');
   return lines;
 }
 

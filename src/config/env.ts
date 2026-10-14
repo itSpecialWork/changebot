@@ -41,11 +41,6 @@ const envSchema = z.object({
   // Пустое значение равносильно отсутствию ключа. Сам ключ в ошибку не попадает.
   CHANGENOW_API_KEY: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
   /**
-   * Private Transfer выключен, пока флаг не равен строке `true`.
-   * Ключ тот же, что у обмена. Без флага сценарий не вызывается.
-   */
-  PRIVATE_TRANSFER_ENABLED: featureFlagSchema,
-  /**
    * Публичный https-адрес без пути. Пустое значение — страницу виджета бот не открывает.
    * Сам адрес в сообщение об ошибке не попадает.
    */
@@ -66,14 +61,8 @@ export interface AppConfig {
   /**
    * Ключ ChangeNOW. Заполнен только при включённом флаге обмена.
    * При выключенном флаге отбрасывается, чтобы не лежать в объекте конфигурации.
-   * Private Transfer использует этот же ключ и отдельного не имеет.
    */
   readonly changeNowApiKey: string | undefined;
-  /**
-   * true — selectPrivateTransferProvider создаёт мок или HTTP-адаптер.
-   * false — провайдер перевода не создаётся, бот сценарий не вызывает.
-   */
-  readonly privateTransferEnabled: boolean;
   /**
    * Origin страницы виджета, без пути и без учётных данных.
    * Кнопка меню открывает эту страницу ссылкой в браузере.
@@ -104,7 +93,6 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
 
   const env = result.data;
   const changeNowEnabled = env.CHANGENOW_ENABLED === 'true';
-  const privateTransferEnabled = env.PRIVATE_TRANSFER_ENABLED === 'true';
   if (changeNowEnabled && env.CHANGENOW_API_KEY === undefined) {
     throw new ConfigError(['CHANGENOW_API_KEY: is required when CHANGENOW_ENABLED is true']);
   }
@@ -119,7 +107,6 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     telegramBotToken: env.TELEGRAM_BOT_TOKEN,
     changeNowEnabled,
     changeNowApiKey: changeNowEnabled ? env.CHANGENOW_API_KEY : undefined,
-    privateTransferEnabled,
     publicBaseUrl: publicBaseOrigin(env.PUBLIC_BASE_URL),
   });
 }
