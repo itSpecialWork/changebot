@@ -3,7 +3,7 @@ import type { Bot } from 'grammy';
 import type { Update } from 'grammy/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSupportBot } from '../src/bot.js';
-import type { SupportExchange, SupportLookup } from '../src/lookup.js';
+import type { SupportExchange, SupportExchangeSummary, SupportLookup } from '../src/lookup.js';
 import { createSupportLogger } from '../src/logger.js';
 
 const USER = 1001;
@@ -58,7 +58,19 @@ describe('диалог бота поддержки', () => {
   const findByIdSuffix = vi.fn<SupportLookup['findByIdSuffix']>(() =>
     Promise.resolve({ kind: 'none' }),
   );
-  const lookup: SupportLookup = { findById, findByProviderExchangeId, findByIdSuffix };
+  const findByUsername = vi.fn<SupportLookup['findByUsername']>(() =>
+    Promise.resolve({ kind: 'none' }),
+  );
+  const findByTelegramId = vi.fn<SupportLookup['findByTelegramId']>(() =>
+    Promise.resolve({ kind: 'none' }),
+  );
+  const lookup: SupportLookup = {
+    findById,
+    findByProviderExchangeId,
+    findByIdSuffix,
+    findByUsername,
+    findByTelegramId,
+  };
   let now = 1_700_000_000_000;
   let bot: Bot;
   let calls: ApiCall[];
@@ -159,7 +171,7 @@ describe('диалог бота поддержки', () => {
 
     now += 1;
     await sendText(PASSWORD);
-    expect(lastText()).toBe('Пришлите ID из квитанции.');
+    expect(lastText()).toBe('Пришлите ID из квитанции, @username или Telegram ID.');
     expect(findById).not.toHaveBeenCalled();
   });
 
@@ -198,6 +210,90 @@ describe('диалог бота поддержки', () => {
 
     expect(lastText()).toBe('Неверный пароль.');
     expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('@username показывает список заявок без адресов', async () => {
+    const hidden = 'secret-payout-address';
+    const first: SupportExchangeSummary = {
+      id: ID,
+      fromCurrency: 'usdt',
+      fromNetwork: 'trx',
+      toCurrency: 'btc',
+      toNetwork: 'btc',
+      expectedFromAmount: '100.5',
+      status: 'FINISHED',
+      createdAt: new Date('2026-10-14T12:00:00Z'),
+      telegramId: '1001',
+      username: 'alice',
+    };
+    const second: SupportExchangeSummary = {
+      ...first,
+      id: '01932f8a-7b3c-7000-8000-00000000abce',
+      expectedFromAmount: '50',
+      status: 'WAITING_DEPOSIT',
+      createdAt: new Date('2026-10-13T12:00:00Z'),
+    };
+    findByUsername.mockResolvedValueOnce({
+      kind: 'list',
+      truncated: false,
+      exchanges: [first, second],
+    });
+
+    await sendText(PASSWORD);
+    await sendText('@alice');
+
+    const text = lastText();
+    expect(text).toContain('Заявки @alice');
+    expect(text).toContain(ID);
+    expect(text).toContain(second.id);
+    expect(text).toContain('100.5');
+    expect(text).toContain('50');
+    expect(text).toContain('Завершён');
+    expect(text).toContain('Ожидаем платёж');
+    expect(text).not.toContain(hidden);
+    expect(text).not.toContain('Депозит');
+    expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('Telegram ID показывает список, а не «заявка не найдена»', async () => {
+    findByTelegramId.mockResolvedValueOnce({
+      kind: 'list',
+      truncated: true,
+      exchanges: [
+        {
+          id: ID,
+          fromCurrency: 'usdt',
+          fromNetwork: 'trx',
+          toCurrency: 'btc',
+          toNetwork: 'btc',
+          expectedFromAmount: '100.5',
+          status: 'FINISHED',
+          createdAt: new Date('2026-10-14T12:00:00Z'),
+          telegramId: '8368526613',
+          username: 'oralCumshoting',
+        },
+      ],
+    });
+    await sendText(PASSWORD);
+    await sendText('8368526613');
+
+    const text = lastText();
+    expect(text).toContain('Заявки @oralCumshoting');
+    expect(text).toContain('Показаны 20 последних.');
+    expect(text).not.toBe('Заявка не найдена.');
+    expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('после списка ID открывает карточку', async () => {
+    findByUsername.mockResolvedValueOnce({ kind: 'empty' });
+    findById.mockResolvedValueOnce(exchange());
+    await sendText(PASSWORD);
+    await sendText('@alice');
+    expect(lastText()).toBe('Заявок у этого пользователя нет.');
+
+    await sendText(ID);
+    expect(lastText()).toContain('pay&lt;out&gt;');
+    expect(findById).toHaveBeenCalledExactlyOnceWith(ID);
   });
 
   it('истекшая сессия не ищет заявку', async () => {

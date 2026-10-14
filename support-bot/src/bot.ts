@@ -1,9 +1,9 @@
 /**
- * Админ-бот поддержки. До пароля текст считается паролем, после — ID заявки.
+ * Админ-бот поддержки. До пароля текст считается паролем, после — ID заявки или @username.
  * Сообщения в лог не пишутся: в них пароль, адреса и суммы.
  */
 import { Bot, type Context } from 'grammy';
-import { renderSupportCard } from './format.js';
+import { renderSupportCard, renderSupportList } from './format.js';
 import { findSupportExchange, type SupportLookup } from './lookup.js';
 import type { Logger } from './logger.js';
 import { passwordMatches } from './password.js';
@@ -27,10 +27,13 @@ const MAX_FAILURES = 5;
 
 const ASK_PASSWORD = 'Введите пароль.';
 const WRONG_PASSWORD = 'Неверный пароль.';
-const ASK_ID = 'Пришлите ID из квитанции.';
+const ASK_ID = 'Пришлите ID из квитанции, @username или Telegram ID.';
 const SESSION_EXPIRED = 'Сессия истекла. Введите пароль.';
 const SESSION_CLOSED = 'Сессия закрыта. Введите пароль.';
 const NOT_FOUND = 'Заявка не найдена.';
+const USER_NOT_FOUND = 'Пользователь не найден.';
+const INVALID_USERNAME = 'Имя Telegram пишется как @username, от 5 символов.';
+const NO_EXCHANGES = 'Заявок у этого пользователя нет.';
 const AMBIGUOUS = 'Уточните полный ID из квитанции.';
 const LOOKUP_FAILED = 'Не удалось открыть заявку. Попробуйте ещё раз.';
 
@@ -156,6 +159,22 @@ export function createSupportBot(options: CreateSupportBotOptions): Bot {
       }
       if (outcome.kind === 'ambiguous') {
         await send(ctx, AMBIGUOUS);
+        return;
+      }
+      if (outcome.kind === 'invalid-username') {
+        await send(ctx, INVALID_USERNAME);
+        return;
+      }
+      if (outcome.kind === 'user-missing') {
+        await send(ctx, USER_NOT_FOUND);
+        return;
+      }
+      if (outcome.kind === 'empty') {
+        await send(ctx, NO_EXCHANGES);
+        return;
+      }
+      if (outcome.kind === 'list') {
+        await send(ctx, renderSupportList(outcome.username, outcome.exchanges, outcome.truncated));
         return;
       }
       await send(ctx, renderSupportCard(outcome.exchange));

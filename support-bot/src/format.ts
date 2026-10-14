@@ -1,4 +1,4 @@
-import type { SupportExchange } from './lookup.js';
+import { SUPPORT_LIST_LIMIT, type SupportExchange, type SupportExchangeSummary } from './lookup.js';
 
 const STATUS_LABELS: Readonly<Record<string, string>> = {
   DRAFT: 'Черновик',
@@ -90,7 +90,37 @@ export function renderSupportCard(exchange: SupportExchange): string {
     .trim();
 }
 
-function pairLine(exchange: SupportExchange): string {
+/** Список заявок одного имени. Полный ID можно отправить следом, чтобы открыть карточку. */
+export function renderSupportList(
+  username: string,
+  exchanges: readonly SupportExchangeSummary[],
+  truncated: boolean,
+): string {
+  const title = /^\d+$/.test(username) ? username : `@${username}`;
+  const lines = [`<b>Заявки ${escapeHtml(title)}</b>`];
+  const telegramIds = new Set(exchanges.map((exchange) => exchange.telegramId));
+  if (telegramIds.size === 1) {
+    const telegramId = exchanges[0]?.telegramId;
+    if (telegramId !== undefined) lines.push(`Telegram ID: <code>${escapeHtml(telegramId)}</code>`);
+  }
+  if (truncated) lines.push(`Показаны ${String(SUPPORT_LIST_LIMIT)} последних.`);
+  lines.push('');
+  for (const exchange of exchanges) {
+    lines.push(
+      escapeHtml(formatTime(exchange.createdAt)),
+      escapeHtml(pairLine(exchange)),
+      `${escapeHtml(exchange.expectedFromAmount)} · ${escapeHtml(STATUS_LABELS[exchange.status] ?? exchange.status)}`,
+    );
+    if (telegramIds.size > 1) {
+      lines.push(`Telegram ID: <code>${escapeHtml(exchange.telegramId)}</code>`);
+    }
+    lines.push(`ID: <code>${escapeHtml(exchange.id)}</code>`, '');
+  }
+  lines.push('Пришлите ID, чтобы открыть карточку.');
+  return lines.join('\n').trim();
+}
+
+function pairLine(exchange: SupportExchange | SupportExchangeSummary): string {
   return `${asset(exchange.fromCurrency, exchange.fromNetwork)} → ${asset(exchange.toCurrency, exchange.toNetwork)}`;
 }
 

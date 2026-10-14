@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { findSupportExchange, type SupportExchange, type SupportLookup } from '../src/lookup.js';
+import {
+  findSupportExchange,
+  type SupportExchange,
+  type SupportExchangeSummary,
+  type SupportLookup,
+} from '../src/lookup.js';
 
 const ID = '01932f8a-7b3c-7000-8000-00000000abcd';
 
@@ -44,11 +49,25 @@ function spies() {
   const findByIdSuffix = vi.fn<SupportLookup['findByIdSuffix']>(() =>
     Promise.resolve({ kind: 'none' }),
   );
+  const findByUsername = vi.fn<SupportLookup['findByUsername']>(() =>
+    Promise.resolve({ kind: 'none' }),
+  );
+  const findByTelegramId = vi.fn<SupportLookup['findByTelegramId']>(() =>
+    Promise.resolve({ kind: 'none' }),
+  );
   return {
-    source: { findById, findByProviderExchangeId, findByIdSuffix },
+    source: {
+      findById,
+      findByProviderExchangeId,
+      findByIdSuffix,
+      findByUsername,
+      findByTelegramId,
+    },
     findById,
     findByProviderExchangeId,
     findByIdSuffix,
+    findByUsername,
+    findByTelegramId,
   };
 }
 
@@ -98,5 +117,75 @@ describe('findSupportExchange', () => {
       kind: 'found',
       exchange: found,
     });
+  });
+
+  it('@username отдаёт список и не ищет заявку по id', async () => {
+    const summary: SupportExchangeSummary = {
+      id: ID,
+      fromCurrency: 'usdt',
+      fromNetwork: 'trx',
+      toCurrency: 'btc',
+      toNetwork: 'btc',
+      expectedFromAmount: '100.5',
+      status: 'FINISHED',
+      createdAt: new Date('2026-10-14T11:00:00Z'),
+      telegramId: '1001',
+      username: 'alice',
+    };
+    const { source, findById, findByUsername } = spies();
+    findByUsername.mockResolvedValueOnce({
+      kind: 'list',
+      truncated: false,
+      exchanges: [summary],
+    });
+
+    await expect(findSupportExchange(source, '@Alice')).resolves.toEqual({
+      kind: 'list',
+      username: 'alice',
+      truncated: false,
+      exchanges: [summary],
+    });
+    expect(findByUsername).toHaveBeenCalledWith('Alice');
+    expect(findById).not.toHaveBeenCalled();
+  });
+
+  it('числовой Telegram ID отдаёт список заявок', async () => {
+    const summary: SupportExchangeSummary = {
+      id: ID,
+      fromCurrency: 'usdt',
+      fromNetwork: 'trx',
+      toCurrency: 'btc',
+      toNetwork: 'btc',
+      expectedFromAmount: '100.5',
+      status: 'FINISHED',
+      createdAt: new Date('2026-10-14T11:00:00Z'),
+      telegramId: '8368526613',
+      username: 'alice',
+    };
+    const { source, findById, findByTelegramId, findByProviderExchangeId } = spies();
+    findByTelegramId.mockResolvedValueOnce({
+      kind: 'list',
+      truncated: false,
+      exchanges: [summary],
+    });
+
+    await expect(findSupportExchange(source, '8368526613')).resolves.toEqual({
+      kind: 'list',
+      username: 'alice',
+      truncated: false,
+      exchanges: [summary],
+    });
+    expect(findByTelegramId).toHaveBeenCalledWith('8368526613');
+    expect(findById).not.toHaveBeenCalled();
+    expect(findByProviderExchangeId).not.toHaveBeenCalled();
+  });
+
+  it('короткое имя после @ не ищет пользователя', async () => {
+    const { source, findByUsername } = spies();
+
+    await expect(findSupportExchange(source, '@ab')).resolves.toEqual({
+      kind: 'invalid-username',
+    });
+    expect(findByUsername).not.toHaveBeenCalled();
   });
 });
