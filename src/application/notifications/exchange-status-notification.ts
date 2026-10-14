@@ -16,13 +16,21 @@ import type { NotificationDraft } from './notification-repository.js';
 export const EXCHANGE_STATUS_CHANGED = 'EXCHANGE_STATUS_CHANGED';
 
 /**
- * Статусы, о которых пишем в чат. DRAFT, QUOTED, AWAITING_CONFIRMATION и CREATING
- * пользователь видит сам в диалоге. EXCHANGING и SENDING не пишем: между «видим
- * платёж» и финалом он ничего не решает, лишние сообщения только путают.
+ * Статусы, о которых пишем в чат сами по себе. DRAFT, QUOTED, AWAITING_CONFIRMATION
+ * и CREATING пользователь видит сам в диалоге. EXCHANGING и SENDING после уже
+ * отправленного «видим платёж» не пишем: между ним и финалом они ничего не решают.
+ *
+ * Если опрос не увидел CONFIRMING и первым после WAITING_DEPOSIT пришёл
+ * EXCHANGING или SENDING, это и есть «видим платёж» — тем же текстом.
  */
+const DEPOSIT_SEEN_LINES = [
+  'Видим ваш платёж.',
+  'Средства будут зачислены в течение короткого времени.',
+] as const;
+
 const STATUS_BODIES = {
   WAITING_DEPOSIT: ['Заявка создана.', 'Отправьте средства по инструкции в карточке.'],
-  CONFIRMING: ['Видим ваш платёж.', 'Средства будут зачислены в течение короткого времени.'],
+  CONFIRMING: DEPOSIT_SEEN_LINES,
   FINISHED: ['Обмен завершён.', 'Средства отправлены на ваш адрес.'],
   FAILED: [
     'Обмен не удался.',
@@ -45,8 +53,34 @@ const STATUS_EMOJI = {
 
 type NotifiableStatus = keyof typeof STATUS_BODIES;
 
+/** Промежуточные статусы, которые в чат пишем только как пропущенный CONFIRMING. */
+const DEPOSIT_SEEN_SKIPPED = ['EXCHANGING', 'SENDING'] as const;
+
+type DepositSeenSkipped = (typeof DEPOSIT_SEEN_SKIPPED)[number];
+
 function isNotifiable(status: ExchangeStatus): status is NotifiableStatus {
   return Object.hasOwn(STATUS_BODIES, status);
+}
+
+function isDepositSeenSkipped(status: ExchangeStatus): status is DepositSeenSkipped {
+  return (DEPOSIT_SEEN_SKIPPED as readonly ExchangeStatus[]).includes(status);
+}
+
+function shouldNotify(from: ExchangeStatus, to: ExchangeStatus): boolean {
+  if (isNotifiable(to)) return true;
+  return from === 'WAITING_DEPOSIT' && isDepositSeenSkipped(to);
+}
+
+function messageFor(
+  status: ExchangeStatus,
+): { readonly emoji: string; readonly lines: readonly string[] } | undefined {
+  if (isNotifiable(status)) {
+    return { emoji: STATUS_EMOJI[status], lines: STATUS_BODIES[status] };
+  }
+  if (isDepositSeenSkipped(status)) {
+    return { emoji: STATUS_EMOJI.CONFIRMING, lines: DEPOSIT_SEEN_LINES };
+  }
+  return undefined;
 }
 
 const exchangeStatusSchema = z.enum(EXCHANGE_STATUSES);
@@ -69,7 +103,7 @@ export function buildExchangeStatusNotification(
   exchange: ExchangeRecord,
   to: ExchangeStatus,
 ): NotificationDraft | undefined {
-  if (!isNotifiable(to)) return undefined;
+  if (!shouldNotify(exchange.status, to)) return undefined;
   const payload: ExchangeStatusChangedPayload = {
     exchangeId: exchange.id,
     fromStatus: exchange.status,
@@ -93,17 +127,14 @@ export function renderNotification(type: string, payload: unknown): string {
     throw new InvalidNotificationError('unknown_type');
   }
   const parsed = exchangeStatusChangedPayloadSchema.safeParse(payload);
-  if (!parsed.success || !isNotifiable(parsed.data.toStatus)) {
+  const message = parsed.success ? messageFor(parsed.data.toStatus) : undefined;
+  if (!parsed.success || message === undefined) {
     throw new InvalidNotificationError('invalid_payload');
   }
-  const { exchangeId, fromCurrency, toCurrency, toStatus } = parsed.data;
+  const { exchangeId, fromCurrency, toCurrency } = parsed.data;
   const pair = `${fromCurrency.toUpperCase()} → ${toCurrency.toUpperCase()}`;
   const order = exchangeId.slice(-8);
-  return [
-    `${STATUS_EMOJI[toStatus]} Обмен ${pair}`,
-    '',
-    `Заявка: ${order}`,
-    '',
-    ...STATUS_BODIES[toStatus],
-  ].join('\n');
+  return [`${message.emoji} Обмен ${pair}`, '', `Заявка: ${order}`, '', ...message.lines].join(
+    '\n',
+  );
 }

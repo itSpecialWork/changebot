@@ -78,6 +78,24 @@ describe('buildExchangeStatusNotification', () => {
     expect(buildExchangeStatusNotification(exchange('DRAFT'), status)).toBeUndefined();
   });
 
+  it.each(['EXCHANGING', 'SENDING'] as const)(
+    'пишет «видим платёж», если опрос перескочил CONFIRMING и увидел %s',
+    (status) => {
+      const draft = buildExchangeStatusNotification(exchange('WAITING_DEPOSIT'), status);
+      expect(draft?.payload).toMatchObject({ fromStatus: 'WAITING_DEPOSIT', toStatus: status });
+      expect(renderNotification(EXCHANGE_STATUS_CHANGED, draft?.payload)).toContain(
+        'Видим ваш платёж.',
+      );
+    },
+  );
+
+  it.each([
+    ['CONFIRMING', 'EXCHANGING'],
+    ['EXCHANGING', 'SENDING'],
+  ] as const)('не повторяет «видим платёж» на переходе %s → %s', (from, to) => {
+    expect(buildExchangeStatusNotification(exchange(from), to)).toBeUndefined();
+  });
+
   it('не кладёт адреса, memo и хэши в payload', () => {
     for (const status of EXCHANGE_STATUSES) {
       const draft = buildExchangeStatusNotification(exchange('WAITING_DEPOSIT'), status);
