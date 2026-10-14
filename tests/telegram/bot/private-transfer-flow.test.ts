@@ -51,9 +51,9 @@ describe('бот: перевод той же монеты включён', () =>
     expect(basis).toContain(
       '<blockquote>Перевод без конвертации\n<b>USDT (trx) → USDT (trx)</b></blockquote>',
     );
-    expect(basis).toContain('<b>Что вы указываете?</b>');
-    expect(basis).toContain('<b>Адресат получит</b>\nСколько должно прийти на адрес.');
-    expect(basis).toContain('К отправке будет не больше этой суммы.');
+    expect(basis).toContain('<b>✏️ Что вы указываете?</b>');
+    expect(basis).toContain('<b>📥 Адресат получит</b>\n\nСколько должно прийти на адрес.');
+    expect(basis).toContain('⚠️ К отправке будет не больше этой суммы.');
     expect(bot.lastButtons()).toContain('b:r');
     expect(bot.lastButtons()).toContain('b:s');
     expect(bot.lastText()).not.toContain('Выберите тип курса');
