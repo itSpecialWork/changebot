@@ -290,6 +290,7 @@ describe('MockExchangeProvider', () => {
       ['failed', 'FAILED'],
       ['refunded', 'REFUNDED'],
       ['verifying', 'VERIFYING'],
+      ['expired', 'EXPIRED'],
     ])('сопоставляет сырой статус %s с %s', async (raw, internal) => {
       const { providerExchangeId } = await provider.createExchange(exchangeRequest());
       provider.setProviderStatus(providerExchangeId, raw);

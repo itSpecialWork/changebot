@@ -112,6 +112,7 @@ export const PROVIDER_EXCHANGE_STATUSES = [
   'FINISHED',
   'FAILED',
   'REFUNDED',
+  'EXPIRED',
 ] as const satisfies readonly ExchangeStatus[];
 
 export type ProviderExchangeStatusName = (typeof PROVIDER_EXCHANGE_STATUSES)[number];

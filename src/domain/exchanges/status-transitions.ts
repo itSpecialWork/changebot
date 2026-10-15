@@ -36,8 +36,9 @@ export const TERMINAL_EXCHANGE_STATUSES = ['FINISHED', 'FAILED', 'REFUNDED', 'EX
  * - Пропуск промежуточных статусов вперёд допустим: polling мог не увидеть их
  *   (например, WAITING_DEPOSIT → FINISHED). Пропуск фиксируется в истории.
  * - Возвраты назад и самопереходы запрещены.
- * - WAITING_DEPOSIT → EXPIRED запрещён намеренно: по своим часам нельзя закрывать
- *   обмен, который ещё жив у провайдера (пользователь может отправить депозит позже).
+ * - В EXPIRED своими часами уходит только WAITING_DEPOSIT: окно депозита вышло,
+ *   провайдер всё ещё ждёт оплату и хеша депозита нет. Ответ провайдера `expired`
+ *   закрывает и более поздние живые статусы. Пока депозит уже виден, часы обмен не закрывают.
  */
 const ALLOWED_TRANSITIONS: Readonly<Record<ExchangeStatus, readonly ExchangeStatus[]>> = {
   DRAFT: ['QUOTED', 'EXPIRED'],
@@ -52,11 +53,12 @@ const ALLOWED_TRANSITIONS: Readonly<Record<ExchangeStatus, readonly ExchangeStat
     'VERIFYING',
     'FAILED',
     'REFUNDED',
+    'EXPIRED',
   ],
-  CONFIRMING: ['EXCHANGING', 'SENDING', 'FINISHED', 'VERIFYING', 'FAILED', 'REFUNDED'],
-  EXCHANGING: ['SENDING', 'FINISHED', 'VERIFYING', 'FAILED', 'REFUNDED'],
-  VERIFYING: ['CONFIRMING', 'EXCHANGING', 'SENDING', 'FINISHED', 'FAILED', 'REFUNDED'],
-  SENDING: ['FINISHED', 'FAILED'],
+  CONFIRMING: ['EXCHANGING', 'SENDING', 'FINISHED', 'VERIFYING', 'FAILED', 'REFUNDED', 'EXPIRED'],
+  EXCHANGING: ['SENDING', 'FINISHED', 'VERIFYING', 'FAILED', 'REFUNDED', 'EXPIRED'],
+  VERIFYING: ['CONFIRMING', 'EXCHANGING', 'SENDING', 'FINISHED', 'FAILED', 'REFUNDED', 'EXPIRED'],
+  SENDING: ['FINISHED', 'FAILED', 'EXPIRED'],
   FINISHED: [],
   FAILED: [],
   REFUNDED: [],

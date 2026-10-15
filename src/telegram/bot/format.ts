@@ -154,7 +154,10 @@ export function renderExchangeCard(exchange: ExchangeRecord, options: CardOption
       );
       break;
     case 'CREATING':
-      lines.push('', 'Обмен создаётся у провайдера. Обновите карточку через минуту.');
+      lines.push(
+        '',
+        'Обмен создаётся у провайдера. Если адрес для оплаты не появится, заявка закроется.',
+      );
       break;
     default:
       break;

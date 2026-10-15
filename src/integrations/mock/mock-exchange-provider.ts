@@ -41,6 +41,7 @@ const RAW_STATUS_TO_INTERNAL: Readonly<Record<string, ProviderExchangeStatusName
   finished: 'FINISHED',
   failed: 'FAILED',
   refunded: 'REFUNDED',
+  expired: 'EXPIRED',
 };
 
 const HAPPY_PATH = ['waiting', 'confirming', 'exchanging', 'sending', 'finished'] as const;

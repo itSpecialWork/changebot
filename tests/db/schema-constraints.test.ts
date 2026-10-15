@@ -319,7 +319,7 @@ describe.skipIf(!testDatabaseUrl)('схема БД: ограничения', () 
       }
     });
 
-    it('EXPIRED не может иметь providerExchangeId', async () => {
+    it('EXPIRED без провайдера остаётся пустым, а после кошелька хранит id вместе с адресом', async () => {
       const user = await createUser();
       await expectCheckViolation(
         prisma.exchange.create({
@@ -331,6 +331,22 @@ describe.skipIf(!testDatabaseUrl)('схема БД: ограничения', () 
         }),
         'exchanges_provider_exchange_id_stage_check',
       );
+
+      await prisma.exchange.create({
+        data: waitingDepositData(user.id, { status: 'EXPIRED', nextCheckAt: null }),
+      });
+    });
+
+    it('отклоняет прыжок статуса, которого нет в матрице', async () => {
+      const user = await createUser();
+      const draft = await prisma.exchange.create({ data: draftData(user.id) });
+
+      await expect(
+        prisma.exchange.update({
+          where: { id: draft.id },
+          data: { status: 'FINISHED' },
+        }),
+      ).rejects.toThrow(/invalid exchange status transition: DRAFT -> FINISHED/);
     });
 
     it('FINISHED требует фактические суммы', async () => {

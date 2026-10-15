@@ -226,5 +226,48 @@ describe.skipIf(!testDatabaseUrl)('опрос обменов', () => {
       expect((await repository.findById(healthy.id))?.status).toBe('CONFIRMING');
       expect((await repository.findById(broken.id))?.status).toBe('WAITING_DEPOSIT');
     });
+
+    it('закрывает зависший CREATING и не создаёт обмен у провайдера ещё раз', async () => {
+      const user = await createTestUser(prisma);
+      const draft = await service.createDraft({
+        userId: user.id,
+        clientRequestId: randomUUID(),
+        fromCurrency: 'usdt',
+        fromNetwork: 'trx',
+        toCurrency: 'btc',
+        toNetwork: 'btc',
+        fromAmount: '100',
+        rateType: 'FLOATING',
+        payoutAddress: 'test-payout-address',
+      });
+      await service.requestQuote(user.id, draft.id);
+      await service.requestConfirmation(user.id, draft.id);
+      const create = vi.spyOn(provider, 'createExchange');
+      create.mockRejectedValueOnce(new ExchangeProviderError('UNAVAILABLE', 'timeout'));
+      await expect(service.confirmAndCreate(user.id, draft.id)).rejects.toMatchObject({
+        code: 'UNAVAILABLE',
+      });
+      expect(create).toHaveBeenCalledTimes(1);
+
+      now = at(2 * 60 * SECOND);
+      await service.pollDueExchanges(1000);
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(await repository.findById(draft.id)).toMatchObject({
+        status: 'FAILED',
+        providerExchangeId: null,
+        nextCheckAt: null,
+      });
+      const rows = await prisma.exchangeStatusHistory.findMany({
+        where: { exchangeId: draft.id },
+        orderBy: { sequence: 'desc' },
+        take: 1,
+      });
+      expect(rows[0]).toMatchObject({
+        fromStatus: 'CREATING',
+        toStatus: 'FAILED',
+        reason: 'creating_timeout',
+      });
+    });
   });
 });

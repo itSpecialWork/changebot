@@ -52,8 +52,12 @@ export interface ExchangeServiceConfig {
   readonly draftTtlMs: number;
   /** Срок жизни floating-котировки (провайдер срок для неё не задаёт). */
   readonly floatingQuoteTtlMs: number;
-  /** Через сколько worker должен проверить обмен, зависший в CREATING. */
+  /** Через сколько worker должен закрыть обмен, зависший в CREATING. */
   readonly creatingRecoveryDelayMs: number;
+  /** Сколько ChangeNOW ждёт депозит на фиксированном курсе после выдачи кошелька. */
+  readonly fixedDepositWindowMs: number;
+  /** Сколько ChangeNOW ждёт депозит на плавающем курсе. */
+  readonly floatingDepositWindowMs: number;
   /** Интервал опроса провайдера для активных обменов. */
   readonly pollIntervalMs: number;
   readonly failureBackoffBaseMs: number;
@@ -68,6 +72,8 @@ export const DEFAULT_EXCHANGE_SERVICE_CONFIG: ExchangeServiceConfig = {
   draftTtlMs: 30 * 60_000,
   floatingQuoteTtlMs: 5 * 60_000,
   creatingRecoveryDelayMs: 2 * 60_000,
+  fixedDepositWindowMs: 20 * 60_000,
+  floatingDepositWindowMs: 24 * 60 * 60_000,
   pollIntervalMs: 30_000,
   failureBackoffBaseMs: 30_000,
   failureBackoffMaxMs: 15 * 60_000,
@@ -512,6 +518,20 @@ export class ExchangeService {
       return this.defer(exchange, 'finished_without_amounts');
     }
 
+    if (this.depositWindowElapsed(exchange, remote, now)) {
+      const notification = buildExchangeStatusNotification(exchange, 'EXPIRED');
+      const updated = await this.move(exchange, 'EXPIRED', 'deposit_window_elapsed', {
+        nextCheckAt: null,
+        ...(notification ? { notification } : {}),
+        patch: {
+          providerStatus: remote.providerStatus,
+          lastCheckedAt: now,
+          ...transactionHashPatch(remote),
+        },
+      });
+      return { outcome: 'transitioned', exchange: updated };
+    }
+
     if (remote.status === exchange.status) {
       const updated = await this.repository.recordCheckSuccess({
         exchangeId,
@@ -560,23 +580,25 @@ export class ExchangeService {
    * Один проход фонового опроса.
    *
    * Сначала закрывает обмены, которых у провайдера ещё нет и чей nextCheckAt
-   * уже прошёл: DRAFT, QUOTED, AWAITING_CONFIRMATION → EXPIRED. WAITING_DEPOSIT
-   * и дальше сюда не входят: живой обмен у провайдера своими часами не закрываем.
+   * уже прошёл: DRAFT, QUOTED, AWAITING_CONFIRMATION → EXPIRED. Затем CREATING
+   * без id провайдера → FAILED, повторно обмен у провайдера не создаётся.
    * Затем захватывает до `limit` созревших обменов с id провайдера и сверяет
-   * каждый. Ошибка одного не влияет на остальные.
+   * каждый. Окно депозита закрывает WAITING_DEPOSIT только после успешного
+   * ответа, который всё ещё ждёт оплату. Ошибка одного не влияет на остальные.
    *
    * Lease (nextCheckAt) покрывает вызов провайдера с запасом. Если проверка
    * не завершилась, обмен вернётся в работу после истечения lease.
    */
   async pollDueExchanges(limit: number): Promise<PollSummary> {
     const expired = await this.expireDueBeforeProvider(limit);
+    const creating = await this.failStuckCreating(limit);
     const polled = await this.pollProviderExchanges(limit);
     return {
-      claimed: expired.claimed + polled.claimed,
-      transitioned: expired.transitioned + polled.transitioned,
-      unchanged: expired.unchanged + polled.unchanged,
+      claimed: expired.claimed + creating.claimed + polled.claimed,
+      transitioned: expired.transitioned + creating.transitioned + polled.transitioned,
+      unchanged: expired.unchanged + creating.unchanged + polled.unchanged,
       deferred: polled.deferred,
-      errors: expired.errors + polled.errors,
+      errors: expired.errors + creating.errors + polled.errors,
     };
   }
 
@@ -663,6 +685,73 @@ export class ExchangeService {
       }
     }
     return { claimed: ids.length, transitioned, unchanged, deferred: 0, errors };
+  }
+
+  /**
+   * Закрывает CREATING, у которого нет id провайдера и срок восстановления вышел.
+   * createExchange повторно не вызывается: неизвестно, создал ли провайдер обмен
+   * в прошлый раз, и второй вызов открыл бы ещё одну заявку.
+   */
+  private async failStuckCreating(limit: number): Promise<PollSummary> {
+    const now = this.now();
+    const ids = await this.repository.claimDueBeforeProvider({
+      now,
+      limit,
+      statuses: ['CREATING'],
+      provider: this.providerKind,
+      leaseUntil: new Date(now.getTime() + this.config.providerTimeoutMs * 2),
+    });
+
+    let transitioned = 0;
+    let unchanged = 0;
+    let errors = 0;
+    for (const exchangeId of ids) {
+      try {
+        const exchange = await this.repository.findById(exchangeId);
+        if (exchange?.status !== 'CREATING') {
+          unchanged += 1;
+          continue;
+        }
+        const notification = buildExchangeStatusNotification(exchange, 'FAILED');
+        await this.move(exchange, 'FAILED', 'creating_timeout', {
+          nextCheckAt: null,
+          ...(notification ? { notification } : {}),
+        });
+        transitioned += 1;
+      } catch (error) {
+        if (error instanceof ExchangeStatusConflictError) {
+          unchanged += 1;
+          continue;
+        }
+        errors += 1;
+        this.logger.error(
+          { exchangeId, err: error },
+          'Unexpected error while closing stuck exchange',
+        );
+      }
+    }
+    return { claimed: ids.length, transitioned, unchanged, deferred: 0, errors };
+  }
+
+  /**
+   * Окно депозита ChangeNOW вышло, а успешный ответ всё ещё ждёт оплату
+   * и не знает хеш депозита. Более поздний статус и видимый депозит сюда не входят.
+   */
+  private depositWindowElapsed(
+    exchange: ExchangeRecord,
+    remote: ProviderExchangeStatus,
+    now: Date,
+  ): boolean {
+    if (exchange.status !== 'WAITING_DEPOSIT' || remote.status !== 'WAITING_DEPOSIT') return false;
+    if (remote.payinHash !== null) return false;
+    const windowMs = this.depositWindowMs(exchange.rateType);
+    return now.getTime() >= exchange.statusChangedAt.getTime() + windowMs;
+  }
+
+  private depositWindowMs(rateType: RateType): number {
+    return rateType === 'FIXED'
+      ? this.config.fixedDepositWindowMs
+      : this.config.floatingDepositWindowMs;
   }
 
   // --- Внутренняя логика --------------------------------------------------------
