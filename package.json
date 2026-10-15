@@ -15,6 +15,7 @@
     "typecheck": "prisma generate && tsc --noEmit",
     "support:dev": "tsx watch support-bot/src/index.ts",
     "support:typecheck": "prisma generate && tsc -p support-bot/tsconfig.json --noEmit",
+    "support:build": "tsc -p support-bot/tsconfig.build.json",
     "pretest": "prisma generate",
     "test": "vitest run",
     "format": "prettier --write .",

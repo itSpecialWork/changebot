@@ -1,0 +1,85 @@
+# Прод на одном сервере. Локальный docker-compose.yml не заменяет: тот только для ноутбука.
+# Имя проекта другое, чтобы том сервера не совпал с томом ноутбука.
+# app — один контейнер на один токен. support — другой токен, заявки только читает.
+name: changenow-exchange-prod
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    shm_size: 256mb
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    image: changenow-exchange:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      # Пароль в URL — из букв и цифр, без спецсимволов. Иначе строка разъедется.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.status === 200 ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  support:
+    build: .
+    image: changenow-exchange:local
+    restart: unless-stopped
+    env_file: .env
+    entrypoint: ['node', 'dist-support/support-bot/src/index.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      SUPPORT_BOT_TOKEN: ${SUPPORT_BOT_TOKEN:?SUPPORT_BOT_TOKEN must be set in .env}
+      SUPPORT_ADMIN_PASSWORD: ${SUPPORT_ADMIN_PASSWORD:?SUPPORT_ADMIN_PASSWORD must be set in .env}
+    depends_on:
+      app:
+        condition: service_healthy
+    mem_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  postgres_data:

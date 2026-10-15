@@ -1,6 +1,7 @@
 # Зависимости и сборка
 node_modules/
 dist/
+dist-support/
 coverage/
 *.tsbuildinfo
 

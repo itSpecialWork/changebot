@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-support
 coverage
 src/database/generated
 package-lock.json

@@ -1,0 +1,15 @@
+node_modules
+dist
+dist-support
+.git
+.github
+coverage
+tests
+support-bot/tests
+**/*.md
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+*.tsbuildinfo
