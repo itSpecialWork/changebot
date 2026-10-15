@@ -10,6 +10,7 @@ export type AgreementSection = 'use' | 'risk' | 'data';
 export type CallbackAction =
   | { readonly kind: 'menu' }
   | { readonly kind: 'new' }
+  | { readonly kind: 'receive' }
   | { readonly kind: 'list' }
   | { readonly kind: 'resume_address' }
   | { readonly kind: 'drop_address' }
@@ -39,6 +40,7 @@ const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const SIMPLE: Readonly<Record<string, CallbackAction>> = {
   'm:menu': { kind: 'menu' },
   'm:new': { kind: 'new' },
+  'm:rcv': { kind: 'receive' },
   'm:list': { kind: 'list' },
   'm:go': { kind: 'resume_address' },
   'm:xa': { kind: 'drop_address' },
@@ -116,6 +118,7 @@ function checked(data: string): string {
 export const callbackData = {
   menu: 'm:menu',
   newExchange: 'm:new',
+  receive: 'm:rcv',
   list: 'm:list',
   resumeAddress: 'm:go',
   dropAddress: 'm:xa',

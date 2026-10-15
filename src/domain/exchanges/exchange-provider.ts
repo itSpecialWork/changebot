@@ -41,10 +41,18 @@ export interface CurrencyPair {
   readonly toNetwork: string;
 }
 
-/** MVP поддерживает только прямой поток: пользователь задаёт сумму отправки. */
+/**
+ * `send` — `fromAmount` это сумма отправки, тип direct.
+ * `receive` — `fromAmount` это сумма, которую должен получить адресат.
+ * Обратная котировка только фиксированная: провайдер сам возвращает больший депозит.
+ */
+export type QuoteDirection = 'send' | 'receive';
+
+/** Прямой поток задаёт сумму отправки. Обратный — сумму получения. */
 export interface QuoteRequest extends CurrencyPair {
   readonly fromAmount: string;
   readonly rateType: RateType;
+  readonly direction?: QuoteDirection;
 }
 
 /** Запрос допустимого диапазона суммы отправки для пары и типа курса. */
@@ -104,6 +112,7 @@ export const PROVIDER_EXCHANGE_STATUSES = [
   'FINISHED',
   'FAILED',
   'REFUNDED',
+  'EXPIRED',
 ] as const satisfies readonly ExchangeStatus[];
 
 export type ProviderExchangeStatusName = (typeof PROVIDER_EXCHANGE_STATUSES)[number];

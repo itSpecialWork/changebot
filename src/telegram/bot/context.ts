@@ -41,8 +41,15 @@ export interface NewExchangeFlow {
   from?: CurrencyChoice;
   to?: CurrencyChoice;
   rateType?: RateType;
-  /** Сумма отправки в нормализованном виде (десятичная строка). */
+  /**
+   * send — сумма отправки. receive — сумма, которую должен получить адресат.
+   * Депозит для receive лежит в depositAmount.
+   */
+  direction: 'send' | 'receive';
+  /** Сумма, которую ввёл пользователь: отправка или получение. */
   amount?: string;
+  /** Сколько отправить, если пользователь назвал сумму получения. */
+  depositAmount?: string;
   payoutAddress?: string;
   /** Фильтр списка монет. Пустая строка — без поиска. */
   currencyQuery: string;

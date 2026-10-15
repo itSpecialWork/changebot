@@ -75,13 +75,22 @@ describe('ExchangeStatus transitions', () => {
     expect(canTransition('CREATING', 'FINISHED')).toBe(false);
   });
 
-  it('WAITING_DEPOSIT нельзя перевести в EXPIRED по собственному таймеру', () => {
-    expect(canTransition('WAITING_DEPOSIT', 'EXPIRED')).toBe(false);
+  it('WAITING_DEPOSIT можно закрыть как просроченный, если депозит так и не пришёл', () => {
+    expect(canTransition('WAITING_DEPOSIT', 'EXPIRED')).toBe(true);
   });
 
-  it('EXPIRED достижим только до создания обмена у провайдера', () => {
+  it('EXPIRED достижим до провайдера и из живых статусов уже созданного обмена', () => {
     const sources = EXCHANGE_STATUSES.filter((s) => canTransition(s, 'EXPIRED'));
-    expect(sources).toEqual(['DRAFT', 'QUOTED', 'AWAITING_CONFIRMATION']);
+    expect(sources).toEqual([
+      'DRAFT',
+      'QUOTED',
+      'AWAITING_CONFIRMATION',
+      'WAITING_DEPOSIT',
+      'CONFIRMING',
+      'EXCHANGING',
+      'SENDING',
+      'VERIFYING',
+    ]);
   });
 
   it('CREATING может закончиться только депозитом или FAILED', () => {

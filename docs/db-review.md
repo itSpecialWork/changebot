@@ -14,8 +14,9 @@ CHECK-ограничения и триггер неизменяемости ис
 
 - `prisma/migrations/20261008150128_domain_model/migration.sql`
 - `prisma/migrations/20261012214700_exchange_transaction_hashes/migration.sql`
+- `prisma/migrations/20261015140000_deposit_window_expiry/migration.sql`
 
-Ожидаемые применённые миграции — ровно эти две, в таблице `_prisma_migrations`.
+Ожидаемые применённые миграции — ровно эти три, в таблице `_prisma_migrations`.
 Пересоздавать миграции и гонять `prisma db pull` на этой базе нельзя: ручной SQL при этом теряется.
 
 Те же правила уже покрыты `tests/db/schema-constraints.test.ts`.
@@ -76,8 +77,9 @@ Enum в базе: `exchange_provider` (`MOCK`, `CHANGENOW`), `exchange_status`, 
 
 Поля по стадиям:
 
-- в `DRAFT`, `QUOTED`, `AWAITING_CONFIRMATION`, `CREATING`, `EXPIRED` колонка `provider_exchange_id` пуста;
+- в `DRAFT`, `QUOTED`, `AWAITING_CONFIRMATION`, `CREATING` колонка `provider_exchange_id` пуста;
 - с `WAITING_DEPOSIT` и дальше по живому обмену (`CONFIRMING`, `EXCHANGING`, `SENDING`, `VERIFYING`, `FINISHED`, `REFUNDED`) она заполнена;
+- `EXPIRED` допускает оба варианта: пустой id до провайдера и заполненный после выдачи кошелька; если id есть, вместе с ним обязательны `payin_address` и `provider_status`;
 - `FAILED` допускает оба варианта: сбой до id провайдера и сбой после него (`exchanges_provider_exchange_id_stage_check`);
 - после выхода из `DRAFT` и для любого статуса кроме `EXPIRED` есть `expected_to_amount` и `quote_expires_at`; у `FIXED` при этом заполнен `provider_rate_id` (`exchanges_quote_stage_check`);
 - `provider_rate_id` бывает только у `FIXED` (`exchanges_provider_rate_id_fixed_check`);
@@ -108,7 +110,7 @@ Outbox:
 ## Чего в CHECK нет
 
 Граф допустимых переходов статусов живёт в приложении: `src/domain/exchanges/status-transitions.ts`.
-База хранит enum и пишет историю, но сама не запрещает, например, прыжок `DRAFT` → `FINISHED`, если вставлены все поля стадии.
+Тот же граф проверяет триггер `exchanges_status_transition` на `UPDATE` колонки `status`: прыжок `DRAFT` → `FINISHED` база отклоняет. Вставка строки сразу в поздний статус по-прежнему возможна, если заполнены поля стадии.
 Переходы выполняет только `ExchangeService`; список статусов в коде и в enum сверяет `tests/domain/exchange-status-sync.test.ts`.
 
 Колонка `notification_outbox.payload` — `json`. База не смотрит её состав.

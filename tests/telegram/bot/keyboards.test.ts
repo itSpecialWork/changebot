@@ -229,7 +229,10 @@ describe('клавиатура валют', () => {
 describe('главное меню', () => {
   it('без кнопки виджета оставляет прежний порядок', () => {
     const rows = mainMenuKeyboard().inline_keyboard;
-    expect(rows[0]).toEqual([{ text: '🔄 Новый обмен', callback_data: 'm:new' }]);
+    expect(rows[0]).toEqual([
+      { text: '📤 Отправить', callback_data: 'm:new' },
+      { text: '📥 Получить', callback_data: 'm:rcv' },
+    ]);
     expect(rows.some((row) => row.some((button) => 'web_app' in button || 'url' in button))).toBe(
       false,
     );

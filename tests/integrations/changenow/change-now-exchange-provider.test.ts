@@ -320,6 +320,16 @@ describe('ChangeNowExchangeProvider', () => {
     expect(status.refundHash).toBeNull();
   });
 
+  it('expired закрывает обмен', async () => {
+    const body = fixture('status-finished.json').replace('"finished"', '"expired"');
+    const { provider } = createHarness(() => jsonResponse(200, body));
+
+    const status = await provider.getExchangeStatus('81cc9c3a9157a6');
+
+    expect(status.providerStatus).toBe('expired');
+    expect(status.status).toBe('EXPIRED');
+  });
+
   it('неизвестный сырой статус становится VERIFYING', async () => {
     const body = fixture('status-finished.json').replace('"finished"', '"holding"');
     const { provider } = createHarness(() => jsonResponse(200, body));

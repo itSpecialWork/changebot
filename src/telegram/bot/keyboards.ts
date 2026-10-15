@@ -258,7 +258,10 @@ export function selectCurrencies(
 }
 
 export function mainMenuKeyboard(widgetButton?: WidgetButton): InlineKeyboard {
-  const keyboard = new InlineKeyboard().text('🔄 Новый обмен', callbackData.newExchange).row();
+  const keyboard = new InlineKeyboard()
+    .text('📤 Отправить', callbackData.newExchange)
+    .text('📥 Получить', callbackData.receive)
+    .row();
   if (widgetButton?.webApp === true) {
     keyboard.webApp('Открыть обмен', widgetButton.url).row();
   } else if (widgetButton !== undefined) {
@@ -395,7 +398,7 @@ export function exchangeListKeyboard(
   }
   if (exchanges.length === 0) return keyboard;
   return keyboard
-    .text('🔄 Новый обмен', callbackData.newExchange)
+    .text('📤 Отправить', callbackData.newExchange)
     .row()
     .text('🏠 В меню', callbackData.menu);
 }

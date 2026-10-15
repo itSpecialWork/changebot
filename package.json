@@ -13,6 +13,8 @@
     "start": "node dist/index.js",
     "lint": "eslint .",
     "typecheck": "prisma generate && tsc --noEmit",
+    "support:dev": "tsx watch support-bot/src/index.ts",
+    "support:typecheck": "prisma generate && tsc -p support-bot/tsconfig.json --noEmit",
     "pretest": "prisma generate",
     "test": "vitest run",
     "format": "prettier --write .",

@@ -70,6 +70,29 @@ describe('бот: одинаковая монета и сеть', () => {
     expect(bot.lastText()).not.toContain('Успешно');
   });
 
+  it('получение 979 просит отправить 1000 и не переворачивает ввод отправки', async () => {
+    await bot.pressButton(USER, 'm:rcv');
+    expect(bot.lastText()).toContain('<b>Получить</b>');
+    await bot.pressButton(USER, 'f:usdt:trx');
+    await bot.pressButton(USER, 't:usdt:trx');
+    expect(bot.lastText()).toContain('которую хотите получить');
+
+    await bot.sendText(USER, '979');
+    expect(bot.lastText()).toContain('979 USDT (trx)');
+    expect(bot.lastText()).toContain('1000 USDT (trx)');
+
+    await bot.sendText(USER, ADDRESS);
+    const exchange = [...bot.exchangeRepository.rows.values()][0];
+    expect(exchange?.expectedFromAmount).toBe('1000');
+    expect(exchange?.expectedToAmount).toBe('979');
+    expect(exchange?.rateType).toBe('FIXED');
+
+    const confirm = bot.lastButtons().find((data) => data.startsWith('c:'));
+    if (!confirm) throw new Error('Confirm button is missing');
+    await bot.pressButton(USER, confirm);
+    expect(bot.lastText()).toContain('Отправьте ровно <b>1000 USDT (trx)</b>');
+  });
+
   it('другая монета сразу переходит к сумме и не спрашивает тип курса', async () => {
     await bot.pressButton(USER, 'm:new');
     await bot.pressButton(USER, 'f:usdt:trx');

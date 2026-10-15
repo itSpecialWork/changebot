@@ -41,6 +41,7 @@ const RAW_STATUS_TO_INTERNAL: Readonly<Record<string, ProviderExchangeStatusName
   finished: 'FINISHED',
   failed: 'FAILED',
   refunded: 'REFUNDED',
+  expired: 'EXPIRED',
 };
 
 const HAPPY_PATH = ['waiting', 'confirming', 'exchanging', 'sending', 'finished'] as const;
@@ -129,6 +130,16 @@ interface StoredExchange {
 
 function pairKey(pair: CurrencyPair): string {
   return `${pair.fromCurrency}:${pair.fromNetwork}>${pair.toCurrency}:${pair.toNetwork}`;
+}
+
+/** Деление с округлением вверх: депозит не должен оказаться меньше нужного получения. */
+function divideDecimalCeil(amount: string, divisor: string): string {
+  const numerator = parseDecimal(amount) * 10n ** 24n;
+  const denominator = parseDecimal(divisor);
+  if (denominator === 0n) {
+    throw new ExchangeProviderError('INVALID_REQUEST', 'Amount is not a valid decimal');
+  }
+  return formatDecimal((numerator + denominator - 1n) / denominator);
 }
 
 function throwIfAborted(options?: ProviderCallOptions): void {
@@ -275,6 +286,53 @@ export class MockExchangeProvider implements ExchangeProvider {
     return { from, to, rate };
   }
 
+  /**
+   * Сумма отправки и сумма получения.
+   * Для receive `request.fromAmount` — желаемое получение, депозит округляется вверх.
+   */
+  private amounts(request: QuoteRequest): {
+    fromAmount: string;
+    toAmount: string;
+    toCurrency: ProviderCurrency;
+  } {
+    if (request.direction === 'receive') return this.calculateReceive(request);
+    const { toAmount, toCurrency } = this.calculate(request);
+    return {
+      fromAmount: formatDecimal(parseDecimal(request.fromAmount)),
+      toAmount,
+      toCurrency,
+    };
+  }
+
+  /** Обратная котировка: человек называет получение, депозит не меньше нужного. */
+  private calculateReceive(request: QuoteRequest): {
+    fromAmount: string;
+    toAmount: string;
+    toCurrency: ProviderCurrency;
+  } {
+    if (request.rateType !== 'FIXED') {
+      throw new ExchangeProviderError('PAIR_NOT_SUPPORTED', 'Receive amount requires a fixed rate');
+    }
+    const { rate, to } = this.requirePair({ ...request, rateType: 'FIXED' });
+    let toAmount: string;
+    try {
+      toAmount = formatDecimal(parseDecimal(request.fromAmount));
+    } catch {
+      throw new ExchangeProviderError('INVALID_REQUEST', 'Amount is not a valid decimal');
+    }
+    if (parseDecimal(toAmount) === 0n) {
+      throw new ExchangeProviderError('AMOUNT_OUT_OF_RANGE', 'Amount is too small');
+    }
+    const fromAmount = divideDecimalCeil(toAmount, rate);
+    if (
+      compareDecimal(fromAmount, this.minFromAmount) < 0 ||
+      compareDecimal(fromAmount, this.maxFromAmount) > 0
+    ) {
+      throw new ExchangeProviderError('AMOUNT_OUT_OF_RANGE', 'Amount is out of allowed range');
+    }
+    return { fromAmount, toAmount, toCurrency: to };
+  }
+
   /** Проверяет пару и сумму, возвращает сумму получения (округление вниз). */
   private calculate(request: QuoteRequest): { toAmount: string; toCurrency: ProviderCurrency } {
     const { rate, to } = this.requirePair(request);
@@ -298,11 +356,11 @@ export class MockExchangeProvider implements ExchangeProvider {
   }
 
   private buildQuote(request: QuoteRequest): ProviderQuote {
-    const { toAmount } = this.calculate(request);
+    const { fromAmount, toAmount } = this.amounts(request);
     if (request.rateType === 'FLOATING') {
       return {
         rateType: 'FLOATING',
-        fromAmount: formatDecimal(parseDecimal(request.fromAmount)),
+        fromAmount,
         toAmount,
         rateId: null,
         expiresAt: null,
@@ -315,7 +373,7 @@ export class MockExchangeProvider implements ExchangeProvider {
     this.quotes.set(rateId, { request, toAmount, expiresAt });
     return {
       rateType: 'FIXED',
-      fromAmount: formatDecimal(parseDecimal(request.fromAmount)),
+      fromAmount,
       toAmount,
       rateId,
       expiresAt,
@@ -323,13 +381,20 @@ export class MockExchangeProvider implements ExchangeProvider {
   }
 
   private openExchange(request: CreateExchangeRequest): ProviderExchange {
-    const { toAmount, toCurrency } = this.calculate(request);
-    this.checkPayoutDetails(request, toCurrency);
+    const quoted = this.amounts(request);
+    this.checkPayoutDetails(request, quoted.toCurrency);
 
-    let expectedToAmount = toAmount;
-    if (request.rateType === 'FIXED') {
+    let expectedFromAmount = quoted.fromAmount;
+    let expectedToAmount = quoted.toAmount;
+    if (request.rateType === 'FIXED' || request.direction === 'receive') {
       const stored = request.rateId === null ? undefined : this.quotes.get(request.rateId);
-      if (!stored || pairKey(stored.request) !== pairKey(request)) {
+      const storedDirection = stored?.request.direction ?? 'send';
+      const requestDirection = request.direction ?? 'send';
+      if (
+        !stored ||
+        pairKey(stored.request) !== pairKey(request) ||
+        storedDirection !== requestDirection
+      ) {
         throw new ExchangeProviderError('INVALID_REQUEST', 'Unknown rate id for this pair');
       }
       if (compareDecimal(stored.request.fromAmount, request.fromAmount) !== 0) {
@@ -338,6 +403,7 @@ export class MockExchangeProvider implements ExchangeProvider {
       if (stored.expiresAt.getTime() <= this.now().getTime()) {
         throw new ExchangeProviderError('QUOTE_EXPIRED', 'Fixed quote has expired');
       }
+      expectedFromAmount = this.amounts(stored.request).fromAmount;
       expectedToAmount = stored.toAmount;
     } else if (request.rateId !== null) {
       throw new ExchangeProviderError('INVALID_REQUEST', 'Rate id is only valid for fixed rate');
@@ -348,7 +414,6 @@ export class MockExchangeProvider implements ExchangeProvider {
     // unique (provider, providerExchangeId), а состояние мока живёт только в памяти.
     const id = `mock-exchange-${randomUUID()}`;
     const fromCurrency = this.findCurrency(request.fromCurrency, request.fromNetwork);
-    const expectedFromAmount = formatDecimal(parseDecimal(request.fromAmount));
     const stored: StoredExchange = {
       expectedFromAmount,
       expectedToAmount,

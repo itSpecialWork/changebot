@@ -71,7 +71,9 @@ export function createBot(options: CreateBotOptions): Bot<BotContext> {
       case 'agreement':
         return menu.agreement(ctx, action.section);
       case 'new':
-        return newExchange.start(ctx);
+        return newExchange.start(ctx, 'send');
+      case 'receive':
+        return newExchange.start(ctx, 'receive');
       case 'list':
         return exchanges.list(ctx);
       case 'resume_address':

@@ -206,6 +206,34 @@ describe('format', () => {
     expect(card).not.toContain('Хэш');
   });
 
+  it('карточка создания не обещает адрес через минуту', () => {
+    const exchange = {
+      id: UUID,
+      fromCurrency: 'usdt',
+      fromNetwork: 'trx',
+      toCurrency: 'btc',
+      toNetwork: 'btc',
+      expectedFromAmount: '100',
+      expectedToAmount: '0.0016',
+      actualToAmount: null,
+      rateType: 'FLOATING',
+      quoteExpiresAt: null,
+      status: 'CREATING',
+      payinAddress: null,
+      payinExtraId: null,
+      payoutAddress: 'addr',
+      payoutExtraId: null,
+      payinHash: null,
+      payoutHash: null,
+      refundHash: null,
+    } as unknown as ExchangeRecord;
+
+    const card = renderExchangeCard(exchange, { demo: false });
+
+    expect(card).toContain('Если адрес для оплаты не появится, заявка закроется.');
+    expect(card).not.toContain('через минуту');
+  });
+
   it('после зачисления та же квитанция меняет статус на успешный', () => {
     const exchange = {
       id: UUID,

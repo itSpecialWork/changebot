@@ -14,6 +14,7 @@ const RAW_STATUS_TO_INTERNAL: Readonly<Record<string, ProviderExchangeStatusName
   failed: 'FAILED',
   refunded: 'REFUNDED',
   verifying: 'VERIFYING',
+  expired: 'EXPIRED',
 };
 
 export function mapChangeNowStatus(raw: string): ProviderExchangeStatusName {

@@ -592,6 +592,90 @@ describe.skipIf(!testDatabaseUrl)('ExchangeService', () => {
 
       await expect(service.syncWithProvider(randomUUID())).rejects.toThrow(ExchangeNotFoundError);
     });
+
+    it('по истечении окна депозита waiting без хеша становится EXPIRED', async () => {
+      const user = await createTestUser(prisma);
+      const exchange = await waitingDeposit(user.id);
+      now = new Date(START.getTime() + 24 * 60 * MINUTE);
+      mockRemoteStatus({ providerStatus: 'waiting', status: 'WAITING_DEPOSIT' });
+
+      const result = await service.syncWithProvider(exchange.id);
+
+      expect(result).toMatchObject({ outcome: 'transitioned' });
+      expect(result.exchange).toMatchObject({
+        status: 'EXPIRED',
+        providerStatus: 'waiting',
+        nextCheckAt: null,
+      });
+      expect((await history(exchange.id)).at(-1)).toMatchObject({
+        fromStatus: 'WAITING_DEPOSIT',
+        toStatus: 'EXPIRED',
+        reason: 'deposit_window_elapsed',
+      });
+      const note = await prisma.notificationOutbox.findFirstOrThrow({
+        where: { exchangeId: exchange.id },
+      });
+      expect(note.payload).toMatchObject({ toStatus: 'EXPIRED' });
+      expect(JSON.stringify(note.payload)).not.toContain(exchange.payinAddress ?? '');
+    });
+
+    it('фиксированный курс закрывается через 20 минут, раньше остаётся в ожидании', async () => {
+      const user = await createTestUser(prisma);
+      const early = await service.confirmAndCreate(
+        user.id,
+        (await awaitingConfirmation(user.id, { rateType: 'FIXED' })).id,
+      );
+      const due = await service.confirmAndCreate(
+        user.id,
+        (await awaitingConfirmation(user.id, { rateType: 'FIXED' })).id,
+      );
+
+      now = new Date(START.getTime() + 20 * MINUTE - 1);
+      mockRemoteStatus({ providerStatus: 'waiting', status: 'WAITING_DEPOSIT' });
+      const stillWaiting = await service.syncWithProvider(early.id);
+      expect(stillWaiting.exchange.status).toBe('WAITING_DEPOSIT');
+
+      now = new Date(START.getTime() + 20 * MINUTE);
+      mockRemoteStatus({ providerStatus: 'new', status: 'WAITING_DEPOSIT' });
+      const expired = await service.syncWithProvider(due.id);
+      expect(expired.exchange).toMatchObject({ status: 'EXPIRED', nextCheckAt: null });
+    });
+
+    it('хеш депозита и более поздний статус не закрывают окно часами', async () => {
+      const user = await createTestUser(prisma);
+      const withHash = await waitingDeposit(user.id);
+      now = new Date(START.getTime() + 24 * 60 * MINUTE);
+      mockRemoteStatus({
+        providerStatus: 'waiting',
+        status: 'WAITING_DEPOSIT',
+        payinHash: '00aa',
+      });
+      const kept = await service.syncWithProvider(withHash.id);
+      expect(kept.exchange).toMatchObject({ status: 'WAITING_DEPOSIT', payinHash: '00aa' });
+
+      const moving = await waitingDeposit(user.id);
+      mockRemoteStatus({ providerStatus: 'confirming', status: 'CONFIRMING' });
+      const followed = await service.syncWithProvider(moving.id);
+      expect(followed.exchange.status).toBe('CONFIRMING');
+    });
+
+    it('ответ expired закрывает обмен, недоступность провайдера после окна нет', async () => {
+      const user = await createTestUser(prisma);
+      const reported = await waitingDeposit(user.id);
+      mockRemoteStatus({ providerStatus: 'expired', status: 'EXPIRED' });
+      const closed = await service.syncWithProvider(reported.id);
+      expect(closed.exchange).toMatchObject({ status: 'EXPIRED', providerStatus: 'expired' });
+      expect((await history(reported.id)).at(-1)?.reason).toBe('provider_status_changed');
+
+      const silent = await waitingDeposit(user.id);
+      now = new Date(START.getTime() + 24 * 60 * MINUTE);
+      vi.spyOn(provider, 'getExchangeStatus').mockRejectedValueOnce(
+        new ExchangeProviderError('UNAVAILABLE', 'down'),
+      );
+      const deferred = await service.syncWithProvider(silent.id);
+      expect(deferred).toMatchObject({ outcome: 'deferred', reason: 'provider_unavailable' });
+      expect(deferred.exchange.status).toBe('WAITING_DEPOSIT');
+    });
   });
 
   describe('same asset', () => {
