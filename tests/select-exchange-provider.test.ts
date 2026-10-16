@@ -14,6 +14,7 @@ function config(patch: Pick<AppConfig, 'changeNowEnabled' | 'changeNowApiKey'>):
     databaseUrl: 'postgresql://user:pass@127.0.0.1:5432/db',
     telegramBotToken: undefined,
     publicBaseUrl: undefined,
+    supportTelegram: undefined,
     ...patch,
   };
 }

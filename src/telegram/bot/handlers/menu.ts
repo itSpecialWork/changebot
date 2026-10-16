@@ -10,15 +10,7 @@ import {
 } from '../keyboards.js';
 import { reply, show } from '../ui.js';
 
-/**
- * Заглушки контактов. Заменить, когда появятся настоящие почта и Telegram.
- * В тексте только эти константы: адреса заявок сюда не подставляются.
- */
-const SUPPORT_EMAIL = 'support@example.com';
-const SUPPORT_TELEGRAM_URL = 'https://t.me/your_support';
-const SUPPORT_TELEGRAM_LABEL = '@your_support';
-
-/** Три коротких раздела вместо одной длинной оферты. Тексты совпадают с тем, что бот реально делает. */
+/** Три коротких раздела вместо одной длинной оферты. */
 function agreementLines(section: AgreementSection): readonly string[] {
   switch (section) {
     case 'use':
@@ -32,7 +24,7 @@ function agreementLines(section: AgreementSection): readonly string[] {
         '',
         'Курс фиксированный, если пара его поддерживает. Иначе курс плавающий, и сумма получения может немного отличаться.',
         '',
-        'Перевод той же монеты в той же сети идёт без конвертации. Та же монета в другой сети — обычный обмен.',
+        'Та же монета в той же сети и та же монета в другой сети идут обычным обменом. Ввод «Отправить» — сумма, которую нужно перевести.',
       ];
     case 'risk':
       return [
@@ -54,7 +46,7 @@ function agreementLines(section: AgreementSection): readonly string[] {
         '',
         'Приватные ключи и seed-фразы мы не запрашиваем и не храним.',
         '',
-        'Сообщение в поддержку вы отправляете сами на почту или в Telegram. Бот эту переписку не читает.',
+        'Сообщение в поддержку вы отправляете сами в Telegram. Бот эту переписку не читает.',
       ];
   }
 }
@@ -92,11 +84,12 @@ export function createMenuHandlers(deps: BotDependencies) {
       if (demo) lines.push(DEMO_BANNER, '');
       lines.push(
         '<b>Служба поддержки</b>',
-        'Если появились вопросы по заявке, напишите сюда. В сообщении укажите ID из карточки обмена — так мы быстрее найдём её.',
-        '',
-        `Почта: <a href="mailto:${SUPPORT_EMAIL}">${escapeHtml(SUPPORT_EMAIL)}</a>`,
-        `Telegram: <a href="${SUPPORT_TELEGRAM_URL}">${escapeHtml(SUPPORT_TELEGRAM_LABEL)}</a>`,
+        'Если появились вопросы по заявке, напишите в Telegram. В сообщении укажите ID из карточки обмена — так мы быстрее найдём её.',
       );
+      const contact = deps.supportTelegram;
+      if (contact !== undefined) {
+        lines.push('', `Telegram: <a href="${contact.url}">${escapeHtml(contact.label)}</a>`);
+      }
       await show(ctx, lines.join('\n'), backToMenuKeyboard());
     },
 

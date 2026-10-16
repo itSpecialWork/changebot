@@ -22,7 +22,6 @@ import type { ExchangeProvider } from './domain/exchanges/exchange-provider.js';
 import type { ExchangeProviderKind } from './domain/exchanges/exchange.js';
 import { ChangeNowExchangeProvider } from './integrations/changenow/change-now-exchange-provider.js';
 import { MockExchangeProvider } from './integrations/mock/mock-exchange-provider.js';
-import { localWidgetPageUrl, widgetPageUrl } from './http/widget-page.js';
 import { finishedReceiptText } from './telegram/notifications/finished-receipt.js';
 import { TelegramNotificationSender } from './telegram/notifications/telegram-notification-sender.js';
 import type { DemoControls } from './telegram/bot/context.js';
@@ -116,12 +115,14 @@ export function createApplication(options: ApplicationOptions): Application {
     users,
     logger,
     ...(demo ? { demo } : {}),
-    widgetButton: {
-      url: config.publicBaseUrl
-        ? widgetPageUrl(config.publicBaseUrl)
-        : localWidgetPageUrl(config.host, config.port),
-      webApp: false,
-    },
+    ...(config.supportTelegram
+      ? {
+          supportTelegram: {
+            url: config.supportTelegram.url,
+            label: config.supportTelegram.label,
+          },
+        }
+      : {}),
   });
 
   const notifications = new NotificationService({

@@ -1,8 +1,9 @@
 # План размещения на одном сервере
 
-Сервер ещё не арендован. Образ и production-compose уже в репозитории: `Dockerfile`, `docker-compose.prod.yml`.
-Флаги этим планом не меняются. Схема приезжает миграциями, включая `20261015140000_deposit_window_expiry`.
-Живой обмен с сервера не включается, пока отдельно не поставлен `CHANGENOW_ENABLED=true`.
+Версия 1 уже стоит на арендованной машине. Повторно проходить установку ниже не нужно: второй клон и второй контейнер обмена сломают текущий запуск.
+Как пользоваться этой машиной и что делать в локальной разработке дальше — в [after-v1.md](after-v1.md).
+Образ и production-compose в репозитории: `Dockerfile`, `docker-compose.prod.yml`.
+Схема приезжает миграциями, включая `20261015140000_deposit_window_expiry`.
 
 ## Что уже запущено локально
 
@@ -40,10 +41,10 @@ Ubuntu 24.04 LTS. Ориентир машины: 2 vCPU, 4 ГБ RAM, 40 ГБ SSD
 Node.js на хост не ставится: в образе Node.js 22.
 
 Вход по паролю, без SSH-ключа. Клиенту передаётся пользователь `deploy` и его пароль.
-`PasswordAuthentication yes`. После проверки входа `deploy` вход root по SSH выключается.
-Фаервол открывает только SSH, без привязки к одному IP.
+`PasswordAuthentication yes`. Вход root по SSH оставлен включённым: так сервер передаётся клиенту паролем.
+Фаервол ufw на этой машине не включался. Снаружи по-прежнему открыт SSH на порту 22.
 
-fail2ban ставится сразу. Тюрьма `sshd`: 5 неудач за 10 минут, бан на 1 час.
+fail2ban уже стоит. Тюрьма `sshd`: 5 неудач за 10 минут, бан на 1 час.
 Если свой адрес забанится, разбан делается из веб-консоли хостера:
 
 ```bash
@@ -58,11 +59,12 @@ Cron один: ночной дамп базы.
 Секреты лежат только в `.env` на сервере, права `600`, владелец — `deploy`.
 В образ и в git файл не попадает. Пароль базы — длинная строка из букв и цифр, без спецсимволов, чтобы не кодировать его в URL.
 Нужны `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`, `SUPPORT_BOT_TOKEN`, `SUPPORT_ADMIN_PASSWORD`.
-`TELEGRAM_BOT_TOKEN` вписывается, когда он есть. Пустое значение оставляет контейнер обмена живым: HTTP и база работают, опрос Telegram включается после появления токена и одного пересоздания контейнера `app`.
-`CHANGENOW_ENABLED=false`. `PUBLIC_BASE_URL` пустой, пока нет домена: кнопка «Открыть обмен» с телефона заработает следующим заходом.
+На этой машине в `.env` уже лежат токен обмена, токен поддержки, пароль админа поддержки и ключ ChangeNOW.
+`CHANGENOW_ENABLED=true`: подтверждение в боте создаёт заявку у провайдера. Вернуть учебный режим — поставить `false` и пересоздать один контейнер `app`.
+`PUBLIC_BASE_URL` пустой, пока нет домена. Кнопка «Открыть обмен» в меню скрыта.
 `BACKUP_TARGET` пустой: копия остаётся на диске сервера.
 
-Контакты `support@example.com` и `@your_support` в боте обмена остаются, пока клиент не даст рабочие.
+Контакт меню обмена — `SUPPORT_TELEGRAM` в `.env` на сервере. Почты в боте нет. Пустое значение не показывает строку контакта.
 
 Порядок старта одной командой `docker compose -f docker-compose.prod.yml up -d --build`:
 
@@ -100,7 +102,7 @@ docker compose -f docker-compose.prod.yml exec -T app \
 
 Почта для дампа не используется: в файле адреса, memo и Telegram ID.
 
-Проверка восстановления, один раз после первого старта:
+Проверка восстановления уже один раз прошла при запуске. Повторять её имеет смысл после смены схемы:
 
 ```bash
 ./scripts/backup-db.sh --drill
@@ -114,7 +116,25 @@ docker compose -f docker-compose.prod.yml exec -T app \
 Логи — stdout контейнера (Pino), у драйвера предел 10 МБ на три файла. Ключи, токен бота и приватные данные в логи не пишутся.
 Отдельный сборщик метрик можно добавить позже.
 
+## Что уже сделано на машине
+
+Эти шаги выполнены 15 октября 2026. Повторять их не нужно.
+
+- Ubuntu 24.04, часовой пояс UTC, пользователь `deploy` с sudo и группой `docker`. Вход root по паролю не закрывался.
+- Подкачка: файл `/swapfile` на 2 ГБ, строка есть в `/etc/fstab`.
+- Docker — пакеты Ubuntu `docker.io` 29.1.3 и `docker-compose-v2` 2.40.3. Репозиторий `download.docker.com` не подключался.
+- Каталог копий `/var/backups/changenow`, владелец `deploy`, права `700`.
+- Код в `/home/deploy/changebot`, коммит с GitHub на момент клона. Образ собран на сервере.
+- Пустая база через `prisma migrate deploy`. Ноутбучный том и дамп туда не копировались.
+- Контейнеры `postgres`, `app`, `support` запущены. `GET /health` ответил `200` и `database: up`.
+- `./scripts/backup-db.sh --drill` совпал с каталогом миграций. Временная база `changenow_restore` после проверки удаляется.
+- Cron пользователя `deploy`: `15 3 * * *` вызывает `scripts/backup-db.sh`.
+- Живой флаг включён после того, как оба бота ответили в Telegram. Пересоздавался только контейнер `app`.
+- fail2ban включён, тюрьма `sshd`. Порт SSH остался 22.
+
 ## Команды на ноутбуке до сервера
+
+Дамп ноутбука уже снят в `~/changenow-local-dump/`. Повторно снимать его имеет смысл только если локальная база ещё нужна как архив.
 
 Из каталога репозитория, локальный Postgres уже поднят (`npm run db:up`). Пароль в чат не копировать.
 
@@ -129,96 +149,8 @@ chmod 600 "$HOME/changenow-local-dump"/*.dump
 Имя пользователя и базы должны совпадать с `POSTGRES_USER` и `POSTGRES_DB` в локальном `.env`.
 Том после этого не удалять: `docker compose down` без `-v`.
 
-## Команды на сервере
+## Команды первого запуска
 
-Их выполняют в терминале, по блокам. Пароли и токены в чат не отправляют.
-Образ Ubuntu в панели хостера: 24.04 LTS. В чат присылается только IP.
-
-Первый вход с ноутбука, пароль root из панели:
-
-```bash
-ssh root@IP
-```
-
-На сервере:
-
-```bash
-apt-get update && apt-get upgrade -y
-timedatectl set-timezone UTC
-adduser deploy
-usermod -aG sudo deploy
-```
-
-Не закрывая сессию root, со второго терминала ноутбука проверить `ssh deploy@IP` и пароль `deploy`.
-После успешного входа, снова под root:
-
-```bash
-printf '%s\n' 'PasswordAuthentication yes' 'KbdInteractiveAuthentication no' 'PermitRootLogin no' \
-  > /etc/ssh/sshd_config.d/99-password-login.conf
-sshd -t && systemctl reload ssh
-apt-get install -y ufw fail2ban
-ufw allow OpenSSH
-ufw --force enable
-printf '%s\n' '[sshd]' 'enabled = true' 'port = ssh' 'backend = systemd' 'maxretry = 5' 'findtime = 10m' 'bantime = 1h' \
-  > /etc/fail2ban/jail.d/sshd.local
-systemctl enable --now fail2ban
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-grep -q '/swapfile' /etc/fstab || printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
-apt-get install -y ca-certificates curl
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
-. /etc/os-release
-printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu %s stable\n' \
-  "$(dpkg --print-architecture)" "$VERSION_CODENAME" > /etc/apt/sources.list.d/docker.list
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-usermod -aG docker deploy
-mkdir -p /var/backups/changenow
-chown deploy:deploy /var/backups/changenow
-chmod 700 /var/backups/changenow
-```
-
-Дальше сессия `deploy`. Если репозиторий приватный, GitHub спросит логин и токен чтения. Токен в репозиторий и в чат не класть.
-
-```bash
-git clone https://github.com/itSpecialWork/changebot.git
-cd changebot
-cp .env.example .env
-chmod 600 .env
-nano .env
-```
-
-В `.env` заменить пароль базы в `POSTGRES_PASSWORD` и в `DATABASE_URL` на одну и ту же строку из букв и цифр.
-`DATABASE_URL` на этом шаге может указывать на `127.0.0.1`: compose для контейнеров подставляет хост `postgres` сам.
-Вписать `SUPPORT_BOT_TOKEN` и `SUPPORT_ADMIN_PASSWORD`. `CHANGENOW_ENABLED=false`, `PUBLIC_BASE_URL` и `BACKUP_TARGET` оставить пустыми.
-Токен обмена вписать, если он уже есть.
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml ps
-./scripts/backup-db.sh --drill
-```
-
-Ночной дамп, под пользователем `deploy`:
-
-```bash
-crontab -e
-```
-
-Строка:
-
-```cron
-15 3 * * * cd /home/deploy/changebot && ./scripts/backup-db.sh >> /var/backups/changenow/backup.log 2>&1
-```
-
-Когда появится токен бота обмена, его вписывают в `.env` и пересоздают один контейнер:
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps app
-```
-
-Второй контейнер обмена этой командой не появляется.
+Первый запуск уже выполнен, блок выше это фиксирует. Повторный `git clone` в ту же папку не делать.
+Повторный `adduser deploy` не нужен. Строку `PermitRootLogin no` на эту машину не ставили и без отдельного решения не ставить.
+Пакеты `docker-ce` из `download.docker.com` не ставить поверх уже работающего `docker.io`.

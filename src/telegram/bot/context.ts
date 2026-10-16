@@ -111,4 +111,6 @@ export interface BotDependencies {
   readonly now?: () => Date;
   /** Нет значения только в тестах. В боевом процессе кнопка есть всегда. */
   readonly widgetButton?: WidgetButton;
+  /** Нет значения — меню поддержки не показывает контакт. Почты нет. */
+  readonly supportTelegram?: { readonly url: string; readonly label: string };
 }

@@ -13,8 +13,10 @@ const ADDRESS = 'mock-payout-address-1';
 
 let bot: BotHarness;
 
+const SUPPORT = { url: 'https://t.me/support_desk', label: '@support_desk' };
+
 beforeEach(async () => {
-  bot = await BotHarness.create();
+  bot = await BotHarness.create({ supportTelegram: SUPPORT });
 });
 
 /** Проходит диалог до карточки подтверждения (USDT trx → BTC, фиксированный курс, 100). */
@@ -81,15 +83,17 @@ describe('бот: меню', () => {
     expect(text).toContain('/start, /menu, /exchanges, /help');
   });
 
-  it('поддержка показывает почту и ссылку на Telegram', async () => {
+  it('поддержка показывает Telegram из настроек и не показывает почту', async () => {
     await bot.pressButton(USER, 'm:sup');
 
     const text = bot.lastText();
     expect(text).toContain('Служба поддержки');
-    expect(text).toContain('напишите сюда');
-    expect(text).toContain('support@example.com');
-    expect(text).toContain('https://t.me/your_support');
-    expect(text).toContain('@your_support');
+    expect(text).toContain('напишите в Telegram');
+    expect(text).toContain(SUPPORT.url);
+    expect(text).toContain(SUPPORT.label);
+    expect(text).not.toContain('Почта');
+    expect(text).not.toContain('mailto:');
+    expect(text).not.toContain('support@example.com');
     expect(bot.lastButtons()).toEqual(['m:menu']);
   });
 
@@ -102,6 +106,11 @@ describe('бот: меню', () => {
     await bot.pressButton(USER, 'm:use');
     expect(bot.lastText()).toContain('Условия обмена');
     expect(bot.lastText()).toContain('seed-фразы');
+    expect(bot.lastText()).toContain(
+      'Та же монета в той же сети и та же монета в другой сети идут обычным обменом.',
+    );
+    expect(bot.lastText()).toContain('Ввод «Отправить» — сумма, которую нужно перевести.');
+    expect(bot.lastText()).not.toContain('без конвертации');
     expect(bot.lastButtons()).toEqual(['m:agr', 'm:menu']);
 
     await bot.pressButton(USER, 'm:rsk');
@@ -111,6 +120,8 @@ describe('бот: меню', () => {
     await bot.pressButton(USER, 'm:dat');
     expect(bot.lastText()).toContain('Какие данные храним');
     expect(bot.lastText()).toContain('seed-фразы');
+    expect(bot.lastText()).toContain('отправляете сами в Telegram');
+    expect(bot.lastText()).not.toContain('почту');
   });
 });
 

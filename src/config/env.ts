@@ -45,6 +45,11 @@ const envSchema = z.object({
    * Сам адрес в сообщение об ошибке не попадает.
    */
   PUBLIC_BASE_URL: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  /**
+   * Имя Telegram поддержки. Пустое значение — строка контакта в меню не показывается.
+   * Почты у поддержки нет. Само имя в сообщение об ошибке не попадает.
+   */
+  SUPPORT_TELEGRAM: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
 });
 
 export interface AppConfig {
@@ -69,6 +74,18 @@ export interface AppConfig {
    * Нет значения — ссылка ведёт на http://127.0.0.1:<порт>/widget.
    */
   readonly publicBaseUrl: string | undefined;
+  /**
+   * Telegram поддержки для меню обмена. Нет значения — бот контакт не показывает.
+   * Почты нет.
+   */
+  readonly supportTelegram: SupportTelegram | undefined;
+}
+
+/** Публичный контакт поддержки. Не секрет: это имя, которое видит пользователь. */
+export interface SupportTelegram {
+  readonly username: string;
+  readonly url: string;
+  readonly label: string;
 }
 
 /**
@@ -108,6 +125,28 @@ export function parseConfig(source: Readonly<Record<string, string | undefined>>
     changeNowEnabled,
     changeNowApiKey: changeNowEnabled ? env.CHANGENOW_API_KEY : undefined,
     publicBaseUrl: publicBaseOrigin(env.PUBLIC_BASE_URL),
+    supportTelegram: supportTelegram(env.SUPPORT_TELEGRAM),
+  });
+}
+
+const SUPPORT_USERNAME = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
+
+/** @name, name или https://t.me/name. Чужой адрес не принимается. */
+function supportTelegram(value: string | undefined): SupportTelegram | undefined {
+  if (value === undefined) return undefined;
+
+  const fromLink = /^(?:https:\/\/)?t\.me\/([A-Za-z][A-Za-z0-9_]{4,31})\/?$/.exec(value);
+  const username = fromLink?.[1] ?? value.replace(/^@/, '');
+  if (!SUPPORT_USERNAME.test(username)) {
+    throw new ConfigError([
+      'SUPPORT_TELEGRAM: must be a Telegram username, like @name or https://t.me/name',
+    ]);
+  }
+
+  return Object.freeze({
+    username,
+    url: `https://t.me/${username}`,
+    label: `@${username}`,
   });
 }
 

@@ -186,6 +186,8 @@ export interface BotHarnessOptions {
    * По умолчанию true, чтобы старые сценарии шли со строкой mock-payout-address-1.
    */
   readonly demo?: boolean;
+  /** Контакт меню поддержки. Нет значения — строка Telegram не показывается. */
+  readonly supportTelegram?: { readonly url: string; readonly label: string };
 }
 
 export class BotHarness {
@@ -222,6 +224,7 @@ export class BotHarness {
           }
         : {}),
       rateLimit: { limit: 10_000, windowMs: 1000 },
+      ...(options.supportTelegram ? { supportTelegram: options.supportTelegram } : {}),
     });
 
     this.bot.api.config.use((_prev, method, payload) => {

@@ -19,6 +19,7 @@ describe('parseConfig', () => {
       changeNowEnabled: false,
       changeNowApiKey: undefined,
       publicBaseUrl: undefined,
+      supportTelegram: undefined,
     });
   });
 
@@ -150,6 +151,32 @@ describe('parseConfig', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as ConfigError).message).toContain('PUBLIC_BASE_URL');
+      expect((error as ConfigError).message).not.toContain(secret);
+    }
+  });
+
+  it('читает Telegram поддержки и не принимает почту', () => {
+    expect(parseConfig(validEnv).supportTelegram).toBeUndefined();
+    expect(parseConfig({ ...validEnv, SUPPORT_TELEGRAM: '' }).supportTelegram).toBeUndefined();
+    expect(parseConfig({ ...validEnv, SUPPORT_TELEGRAM: '@Sylvester717' }).supportTelegram).toEqual(
+      {
+        username: 'Sylvester717',
+        url: 'https://t.me/Sylvester717',
+        label: '@Sylvester717',
+      },
+    );
+    expect(
+      parseConfig({ ...validEnv, SUPPORT_TELEGRAM: 'https://t.me/Sylvester717' }).supportTelegram
+        ?.label,
+    ).toBe('@Sylvester717');
+
+    const secret = 'not-a-telegram-secret';
+    try {
+      parseConfig({ ...validEnv, SUPPORT_TELEGRAM: secret });
+      expect.unreachable('parseConfig должен выбросить ошибку');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigError);
+      expect((error as ConfigError).message).toContain('SUPPORT_TELEGRAM');
       expect((error as ConfigError).message).not.toContain(secret);
     }
   });
